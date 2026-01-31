@@ -6,24 +6,24 @@ edition = "2021"
 [dependencies]
 # Configuration
 serde = { version = "1.0", features = ["derive"] }
-toml = "0.8"
+toml = "0.9.8"
 
 # Error handling
 anyhow = "1.0"
-thiserror = "1.0"
+thiserror = "2.0.18"
 
 # Audio capture
-cpal = "0.15"
+cpal = "0.17.1"
 
 # Audio processing
-rubato = "0.15"
+rubato = "0.16.2"
 hound = "3.5"
 
 # Threading and synchronization
-ringbuf = "0.4"
+ringbuf = "0.4.8"
 
 # Terminal UI
-crossterm = "0.27"
+crossterm = "0.29"
 ctrlc = "3.4"
 
 # Command line arguments
@@ -38,11 +38,10 @@ chrono = "0.4"
 
 # Speech recognition
 vosk = "0.3"
-whisper-rs = { version = "0.10", optional = true }
+whisper-rs = "0.15.1"
 
 [features]
 default = []
-whisper = ["whisper-rs"]
 
 [[bin]]
 name = "pstt"

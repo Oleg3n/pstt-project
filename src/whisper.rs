@@ -1,29 +1,20 @@
 use anyhow::Result;
 use std::path::PathBuf;
 
-#[cfg(feature = "whisper")]
 use whisper_rs::{WhisperContext, FullParams, SamplingStrategy};
 
 pub fn transcribe_with_whisper(
-    _wav_path: &PathBuf,
-    _model_path: &str,
-    _output_dir: &str,
+    wav_path: &PathBuf,
+    model_path: &str,
+    output_dir: &str,
 ) -> Result<String> {
-    #[cfg(not(feature = "whisper"))]
-    {
-        log::error!("Whisper feature not enabled. Rebuild with: cargo build --features whisper");
-        anyhow::bail!("Whisper feature not compiled in");
-    }
+    use std::fs::File;
+    use std::io::Write;
+    use whisper_rs::WhisperContextParameters;
     
-    #[cfg(feature = "whisper")]
-    {
-        use std::fs::File;
-        use std::io::Write;
+    log::info!("Loading Whisper model from: {}", model_path);
+    let ctx = WhisperContext::new_with_params(model_path, WhisperContextParameters::default())?;
         
-        log::info!("Loading Whisper model from: {}", model_path);
-        let ctx = WhisperContext::new(model_path)?;
-        
-        // Load audio
         log::info!("Loading audio from: {}", wav_path.display());
         let samples = load_audio_samples(wav_path)?;
         
@@ -41,19 +32,18 @@ pub fn transcribe_with_whisper(
         let mut state = ctx.create_state()?;
         state.full(params, &samples)?;
         
-        // Collect results
-        let num_segments = state.full_n_segments()?;
+        let num_segments = state.full_n_segments();
         let mut full_text = String::new();
         
         log::info!("Processing {} segments", num_segments);
         
         for i in 0..num_segments {
-            let segment = state.full_get_segment_text(i)?;
-            full_text.push_str(&segment);
+            let segment = state.get_segment(i)
+                .ok_or_else(|| anyhow::anyhow!("No segment found"))?;
+            full_text.push_str(segment.to_str()?);
             full_text.push(' ');
         }
         
-        // Save to file
         let filename = wav_path.file_stem().unwrap().to_str().unwrap();
         let output_path = format!("{}/{}_accurate.txt", output_dir, filename);
         let mut file = File::create(&output_path)?;
@@ -63,10 +53,8 @@ pub fn transcribe_with_whisper(
         println!("📝 Accurate transcription saved to: {}", output_path);
         
         Ok(full_text)
-    }
 }
 
-#[cfg(feature = "whisper")]
 fn load_audio_samples(path: &PathBuf) -> Result<Vec<f32>> {
     let mut reader = hound::WavReader::open(path)?;
     let samples: Vec<f32> = reader.samples::<i16>()

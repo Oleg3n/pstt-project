@@ -25,4 +25,4 @@ whisper_model_path = "./models/ggml-base.en.bin"
 
 # Enable accurate recognition with Whisper after recording stops
 # Set to false if you only want real-time Vosk transcription
-enable_accurate_recognition = false
+enable_accurate_recognition = true
