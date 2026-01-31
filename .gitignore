@@ -1,0 +1,29 @@
+# Rust
+/target/
+Cargo.lock
+**/*.rs.bk
+*.pdb
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+/recordings/
+/models/
+*.wav
+*.txt
+
+# Keep example config but ignore local config variations
+# config.toml is tracked, but you can create config.local.toml
+config.local.toml
+
+# Logs
+*.log

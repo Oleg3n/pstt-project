@@ -1,0 +1,23 @@
+# Private Speech-to-Text Configuration
+
+# Audio sample rate for processing (Hz)
+# Vosk models typically work with 16000 Hz
+sample_rate = 16000
+
+# Directory where recordings and transcriptions will be saved
+# Can be absolute path (e.g., "/home/user/recordings") or relative (e.g., "./recordings")
+output_directory = "./recordings"
+
+# Path to Vosk model directory
+# Download from: https://alphacephei.com/vosk/models
+# Example: vosk-model-small-en-us-0.15
+vosk_model_path = "./models/vosk-model-small-en-us-0.15"
+
+# Path to Whisper model file (optional, only if using --features whisper)
+# Download from: https://huggingface.co/ggerganov/whisper.cpp
+# Example: ggml-base.en.bin
+whisper_model_path = "./models/ggml-base.en.bin"
+
+# Enable accurate recognition with Whisper after recording stops
+# Set to false if you only want real-time Vosk transcription
+enable_accurate_recognition = false
