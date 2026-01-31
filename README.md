@@ -98,6 +98,12 @@ Edit `config.toml`:
 # Audio sample rate for processing (Hz)
 sample_rate = 16000
 
+# Audio gain/amplification multiplier
+# 1.0 = no change, 2.0 = double volume, 3.0 = triple volume
+# Increase if recordings are too quiet (try 2.0-5.0)
+# Decrease if recordings are distorted (try 0.5-0.8)
+audio_gain = 3.0
+
 # Directory where recordings will be saved
 output_directory = "./recordings"
 
@@ -184,8 +190,11 @@ RUST_LOG=warn cargo run --release
 
 ### Audio quality issues
 - Adjust `sample_rate` in config (16000 Hz is standard for speech)
+- **If too quiet**: Increase `audio_gain` (try 2.0, 3.0, or even 5.0)
+- **If distorted/clipping**: Decrease `audio_gain` (try 0.5 or 0.8)
 - Check your microphone settings in OS
 - Ensure microphone is not too far away
+- Test microphone gain in system settings first
 
 ## Performance
 

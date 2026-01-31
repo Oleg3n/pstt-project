@@ -16,6 +16,7 @@ Cargo.lock
 Thumbs.db
 
 # Project specific
+/libs/
 /recordings/
 /models/
 *.wav

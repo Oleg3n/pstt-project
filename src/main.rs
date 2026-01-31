@@ -19,7 +19,7 @@ use std::sync::mpsc;
 use chrono::Local;
 
 use config::Config;
-use buffers::{AudioPipeline, BlockingQueue};
+use buffers::{AudioPipeline};
 use input::{InputCommand, check_input};
 
 #[derive(Parser)]
@@ -212,12 +212,37 @@ fn run_recording_mode(config: Arc<Config>) -> Result<()> {
     println!("  [Ctrl+C] - Exit");
     println!();
     
+    // Set up Ctrl+C handler before enabling raw mode
+    let running = Arc::new(AtomicBool::new(true));
+    let r = running.clone();
+    
+    ctrlc::set_handler(move || {
+        r.store(false, Ordering::Relaxed);
+    }).expect("Error setting Ctrl+C handler");
+    
     enable_raw_mode()?;
+    
+    // Clear any pending keyboard events (like the Enter from mic selection)
+    while crossterm::event::poll(std::time::Duration::from_millis(0))? {
+        crossterm::event::read()?;
+    }
     
     let mut session: Option<RecordingSession> = None;
     let mut is_recording = false;
     
     loop {
+        // Check if Ctrl+C was pressed
+        if !running.load(Ordering::Relaxed) {
+            if is_recording {
+                if let Some(s) = session.take() {
+                    s.stop();
+                }
+            }
+            disable_raw_mode()?;
+            println!("\n\n👋 Goodbye!");
+            break;
+        }
+        
         match check_input()? {
             InputCommand::StartRecording => {
                 if !is_recording {
@@ -244,17 +269,7 @@ fn run_recording_mode(config: Arc<Config>) -> Result<()> {
                     println!("\n✓ Recording saved. Press Enter to record again, or Ctrl+C to exit.");
                 }
             }
-            InputCommand::Exit => {
-                if is_recording {
-                    if let Some(s) = session.take() {
-                        s.stop();
-                    }
-                }
-                disable_raw_mode()?;
-                println!("\n\n👋 Goodbye!");
-                break;
-            }
-            InputCommand::None => {}
+            InputCommand::Exit | InputCommand::None => {}
         }
     }
     

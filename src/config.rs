@@ -6,6 +6,7 @@ use std::path::Path;
 #[derive(Debug, Deserialize, Clone)]
 pub struct Config {
     pub sample_rate: u32,
+    pub audio_gain: f32,
     pub output_directory: String,
     pub vosk_model_path: String,
     pub whisper_model_path: String,
@@ -39,6 +40,11 @@ impl Config {
         // Validate sample rate
         if self.sample_rate < 8000 || self.sample_rate > 48000 {
             anyhow::bail!("sample_rate must be between 8000 and 48000 Hz");
+        }
+        
+        // Validate audio gain
+        if self.audio_gain <= 0.0 || self.audio_gain > 10.0 {
+            anyhow::bail!("audio_gain must be between 0.0 and 10.0 (recommended: 1.0-5.0)");
         }
         
         // Check if Vosk model path exists

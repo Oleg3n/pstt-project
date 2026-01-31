@@ -27,8 +27,8 @@ impl VoskRecognizer {
         text_sender: mpsc::Sender<RecognizedText>,
     ) -> Result<Self> {
         log::info!("Loading Vosk model from: {}", model_path);
-        let model = Model::new(model_path)?;
-        let recognizer = Recognizer::new(&model, sample_rate as f32)?;
+        let model = Model::new(model_path).ok_or_else(|| anyhow::anyhow!("Failed to load Vosk model"))?;
+        let recognizer = Recognizer::new(&model, sample_rate as f32).ok_or_else(|| anyhow::anyhow!("Failed to create Vosk recognizer"))?;
         
         log::info!("Vosk model loaded successfully");
         
@@ -48,23 +48,24 @@ impl VoskRecognizer {
             .map(|&s| (s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16)
             .collect();
         
-        let bytes: Vec<u8> = samples_i16.iter()
-            .flat_map(|&s| s.to_le_bytes())
-            .collect();
-        
-        if self.recognizer.accept_waveform(&bytes) {
-            if let Some(result) = self.recognizer.result().single() {
-                let text = result.text;
-                if !text.is_empty() {
-                    println!("🎤 Recognized: {}", text);
-                    
-                    // Send to writer thread (non-blocking)
-                    let _ = self.text_sender.send(RecognizedText {
-                        text,
-                        timestamp: Local::now(),
-                        is_final: false,
-                    });
+        // Accept waveform expects &[i16], returns Result<DecodingState, AcceptWaveformError>
+        match self.recognizer.accept_waveform(&samples_i16) {
+            Ok(_) => {
+                if let Some(result) = self.recognizer.result().single() {
+                    let text = result.text;
+                    if !text.is_empty() {
+                        println!("🎤 Recognized: {}", text);
+                        // Send to writer thread (non-blocking)
+                        let _ = self.text_sender.send(RecognizedText {
+                            text: text.to_string(),
+                            timestamp: Local::now(),
+                            is_final: false,
+                        });
+                    }
                 }
+            },
+            Err(e) => {
+                log::error!("accept_waveform error: {:?}", e);
             }
         }
         
@@ -76,9 +77,8 @@ impl VoskRecognizer {
             let text = result.text;
             if !text.is_empty() {
                 println!("🎤 Final: {}", text);
-                
                 let _ = self.text_sender.send(RecognizedText {
-                    text,
+                    text: text.to_string(),
                     timestamp: Local::now(),
                     is_final: true,
                 });

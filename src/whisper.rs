@@ -5,9 +5,9 @@ use std::path::PathBuf;
 use whisper_rs::{WhisperContext, FullParams, SamplingStrategy};
 
 pub fn transcribe_with_whisper(
-    wav_path: &PathBuf,
-    model_path: &str,
-    output_dir: &str,
+    _wav_path: &PathBuf,
+    _model_path: &str,
+    _output_dir: &str,
 ) -> Result<String> {
     #[cfg(not(feature = "whisper"))]
     {

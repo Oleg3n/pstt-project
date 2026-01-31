@@ -24,6 +24,7 @@ ringbuf = "0.4"
 
 # Terminal UI
 crossterm = "0.27"
+ctrlc = "3.4"
 
 # Command line arguments
 clap = { version = "4.4", features = ["derive"] }
