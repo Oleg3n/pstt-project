@@ -93,7 +93,8 @@ impl AudioResampler {
 
 pub fn resampler_thread(
     raw_queue: Arc<BlockingQueue<f32>>,
-    resampled_queue: Arc<BlockingQueue<f32>>,
+    resampled_queue_writer: Arc<BlockingQueue<f32>>,
+    resampled_queue_vosk: Arc<BlockingQueue<f32>>,
     config: Arc<Config>,
     stop_signal: Arc<AtomicBool>,
 ) {
@@ -138,8 +139,12 @@ pub fn resampler_thread(
             match resampler.process(&amplified) {
                 Ok(resampled) => {
                     if !resampled.is_empty() {
-                        if !resampled_queue.push(resampled) {
-                            log::warn!("Resampler: Failed to push to resampled queue");
+                        let resampled_clone = resampled.clone();
+                        if !resampled_queue_writer.push(resampled) {
+                            log::warn!("Resampler: Failed to push to resampled writer queue");
+                        }
+                        if !resampled_queue_vosk.push(resampled_clone) {
+                            log::warn!("Resampler: Failed to push to resampled Vosk queue");
                         }
                     }
                 }
@@ -172,8 +177,12 @@ pub fn resampler_thread(
         match resampler.process(&amplified) {
             Ok(resampled) => {
                 if !resampled.is_empty() {
-                    if !resampled_queue.push(resampled) {
-                        log::warn!("Resampler: Failed to push to resampled queue");
+                    let resampled_clone = resampled.clone();
+                    if !resampled_queue_writer.push(resampled) {
+                        log::warn!("Resampler: Failed to push to resampled writer queue");
+                    }
+                    if !resampled_queue_vosk.push(resampled_clone) {
+                        log::warn!("Resampler: Failed to push to resampled Vosk queue");
                     }
                 }
             }
@@ -188,8 +197,12 @@ pub fn resampler_thread(
     match resampler.flush() {
         Ok(resampled) => {
             if !resampled.is_empty() {
-                if !resampled_queue.push(resampled) {
-                    log::warn!("Resampler: Failed to push final samples");
+                let resampled_clone = resampled.clone();
+                if !resampled_queue_writer.push(resampled) {
+                    log::warn!("Resampler: Failed to push final samples to writer queue");
+                }
+                if !resampled_queue_vosk.push(resampled_clone) {
+                    log::warn!("Resampler: Failed to push final samples to Vosk queue");
                 }
             }
         }

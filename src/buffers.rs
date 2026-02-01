@@ -44,14 +44,16 @@ impl<T> BlockingQueue<T> {
 
 pub struct AudioPipeline {
     pub raw_queue: Arc<BlockingQueue<f32>>,
-    pub resampled_queue: Arc<BlockingQueue<f32>>,
+    pub resampled_queue_writer: Arc<BlockingQueue<f32>>,
+    pub resampled_queue_vosk: Arc<BlockingQueue<f32>>,
 }
 
 impl AudioPipeline {
     pub fn new(buffer_size: usize) -> Self {
         Self {
             raw_queue: BlockingQueue::new(buffer_size),
-            resampled_queue: BlockingQueue::new(buffer_size),
+            resampled_queue_writer: BlockingQueue::new(buffer_size),
+            resampled_queue_vosk: BlockingQueue::new(buffer_size),
         }
     }
 }

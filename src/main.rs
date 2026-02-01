@@ -81,11 +81,12 @@ impl RecordingSession {
         // Thread 2: Resampler
         let resampler_handle = {
             let raw_q = Arc::clone(&pipeline.raw_queue);
-            let resampled_q = Arc::clone(&pipeline.resampled_queue);
+            let resampled_q_writer = Arc::clone(&pipeline.resampled_queue_writer);
+            let resampled_q_vosk = Arc::clone(&pipeline.resampled_queue_vosk);
             let cfg = Arc::clone(&config);
             let stop = Arc::clone(&stop_signal);
             std::thread::spawn(move || {
-                resampler::resampler_thread(raw_q, resampled_q, cfg, stop);
+                resampler::resampler_thread(raw_q, resampled_q_writer, resampled_q_vosk, cfg, stop);
                 log::info!("Resampler thread exiting");
             })
         };
@@ -93,7 +94,7 @@ impl RecordingSession {
 
         // Thread 3: WAV Writer
         let writer_handle = {
-            let resampled_q = Arc::clone(&pipeline.resampled_queue);
+            let resampled_q = Arc::clone(&pipeline.resampled_queue_writer);
             let cfg = Arc::clone(&config);
             let stop = Arc::clone(&stop_signal);
             std::thread::spawn(move || {
@@ -108,7 +109,7 @@ impl RecordingSession {
 
         // Thread 4: Vosk Recognition
         let vosk_handle = {
-            let resampled_q = Arc::clone(&pipeline.resampled_queue);
+            let resampled_q = Arc::clone(&pipeline.resampled_queue_vosk);
             let cfg = Arc::clone(&config);
             let stop = Arc::clone(&stop_signal);
             let tx = text_tx.clone();
