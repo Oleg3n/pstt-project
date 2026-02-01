@@ -45,6 +45,7 @@ struct RecordingSession {
     threads: Vec<std::thread::JoinHandle<()>>,
     stop_signal: Arc<AtomicBool>,
     text_tx: mpsc::Sender<recognition::RecognizedText>,
+    wav_path_rx: mpsc::Receiver<PathBuf>,
 }
 
 impl RecordingSession {
@@ -59,6 +60,9 @@ impl RecordingSession {
         
         // Create text channel
         let (text_tx, text_rx) = mpsc::channel::<recognition::RecognizedText>();
+        
+        // Create wav path channel
+        let (wav_path_tx, wav_path_rx) = mpsc::channel::<PathBuf>();
         
         let mut threads = Vec::new();
         
@@ -97,9 +101,13 @@ impl RecordingSession {
             let resampled_q = Arc::clone(&pipeline.resampled_queue_writer);
             let cfg = Arc::clone(&config);
             let stop = Arc::clone(&stop_signal);
+            let path_tx = wav_path_tx.clone();
             std::thread::spawn(move || {
                 match writer::writer_thread(resampled_q, cfg, stop) {
-                    Ok(path) => log::info!("Recording saved: {}", path.display()),
+                    Ok(path) => {
+                        log::info!("Recording saved: {}", path.display());
+                        let _ = path_tx.send(path);
+                    },
                     Err(e) => log::error!("Writer thread error: {}", e),
                 }
                 log::info!("WAV writer thread exiting");
@@ -107,21 +115,21 @@ impl RecordingSession {
         };
         threads.push(writer_handle);
 
-        // Thread 4: Vosk Recognition
-        let vosk_handle = {
+        // Thread 4: Whisper Recognition
+        let whisper_handle = {
             let resampled_q = Arc::clone(&pipeline.resampled_queue_vosk);
             let cfg = Arc::clone(&config);
             let stop = Arc::clone(&stop_signal);
             let tx = text_tx.clone();
             std::thread::spawn(move || {
-                match recognition::vosk_thread(resampled_q, tx, cfg, stop) {
-                    Ok(_) => log::info!("Vosk recognition completed"),
-                    Err(e) => log::error!("Vosk thread error: {}", e),
+                match recognition::whisper_thread(resampled_q, tx, cfg, stop) {
+                    Ok(_) => log::info!("Whisper recognition completed"),
+                    Err(e) => log::error!("Whisper thread error: {}", e),
                 }
-                log::info!("Vosk recognition thread exiting");
+                log::info!("Whisper recognition thread exiting");
             })
         };
-        threads.push(vosk_handle);
+        threads.push(whisper_handle);
 
         // Thread 5: Text Writer
         let text_writer_handle = {
@@ -146,10 +154,11 @@ impl RecordingSession {
             threads,
             stop_signal,
             text_tx,
+            wav_path_rx,
         })
     }
     
-    fn stop(self) {
+    fn stop(self) -> Option<PathBuf> {
         log::info!("Stopping recording...");
         
         // Signal all threads to stop
@@ -166,10 +175,13 @@ impl RecordingSession {
             let _ = thread.join();
         }
         
+        // Try to receive the wav path (should be available after writer thread finishes)
+        let wav_path = self.wav_path_rx.try_recv().ok();
+        
         log::info!("Recording stopped");
+        wav_path
     }
 }
-
 fn run_recording_mode(config: Arc<Config>) -> Result<()> {
     println!("╔══════════════════════════════════════════════════════════════╗");
     println!("║         Private Speech-to-Text (PSTT) v0.1.0                 ║");
@@ -248,7 +260,7 @@ fn run_recording_mode(config: Arc<Config>) -> Result<()> {
             println!("\n\n👋 Goodbye!");
             break;
         }
-        
+
         match check_input()? {
             InputCommand::StartRecording => {
                 if !is_recording {
@@ -261,21 +273,26 @@ fn run_recording_mode(config: Arc<Config>) -> Result<()> {
                 if is_recording {
                     println!("\n⏹️  Stopping recording...");
                     if let Some(s) = session.take() {
-                        println!("DEBUG: Stopping recording session");
-                        s.stop();
-                        println!("DEBUG: Stopped Recording session");
-
+                        let wav_path = s.stop();
+                        // Optionally run Whisper for accurate transcription
+                        if config.enable_accurate_recognition {
+                            if let Some(path) = wav_path {
+                                println!("🔄 Running accurate transcription with Whisper...");
+                                match whisper::transcribe_with_whisper(
+                                    &path,
+                                    &config.whisper_model_path_accurate,
+                                    &config.output_directory,
+                                ) {
+                                    Ok(_) => println!("✅ Accurate transcription completed"),
+                                    Err(e) => log::error!("Accurate transcription error: {}", e),
+                                }
+                            } else {
+                                log::warn!("Could not get WAV file path for accurate transcription");
+                            }
+                        }
                     }
                     is_recording = false;
-                    
-                    // Optionally run Whisper for accurate transcription
-                    if config.enable_accurate_recognition {
-                        println!("Running accurate transcription with Whisper...");
-                        // Note: This would need the wav path from the writer thread
-                        println!("(Whisper integration pending)");
-                    }
-                    
-                    println!("\n✓ Recording saved. Press Enter to record again, or Ctrl+C to exit.");
+                    println!("\n✅ Recording saved. Press Enter to record again, or Ctrl+C to exit.");
                 }
             }
             InputCommand::Exit => {
@@ -285,9 +302,10 @@ fn run_recording_mode(config: Arc<Config>) -> Result<()> {
             InputCommand::None => {}
         }
     }
-    
+
     Ok(())
 }
+
 
 fn run_accurate_mode(config: Arc<Config>, wav_file: String) -> Result<()> {
     println!("Running accurate transcription on: {}", wav_file);
@@ -305,7 +323,7 @@ fn run_accurate_mode(config: Arc<Config>, wav_file: String) -> Result<()> {
     
     whisper::transcribe_with_whisper(
         &wav_path,
-        &config.whisper_model_path,
+        &config.whisper_model_path_accurate,
         &config.output_directory,
     )?;
     

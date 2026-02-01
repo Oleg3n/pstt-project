@@ -1,4 +1,4 @@
-use vosk::{Model, Recognizer};
+use whisper_rs::{WhisperContext, WhisperContextParameters, FullParams, SamplingStrategy};
 use anyhow::Result;
 use std::sync::mpsc;
 use std::sync::Arc;
@@ -15,26 +15,46 @@ pub struct RecognizedText {
     pub is_final: bool,
 }
 
-pub struct VoskRecognizer {
-    recognizer: Recognizer,
+pub struct WhisperRecognizer {
+    context: WhisperContext,
     text_sender: mpsc::Sender<RecognizedText>,
+    buffer: Vec<f32>,
+    chunk_size: usize,
+    sample_rate: u32,
 }
 
-impl VoskRecognizer {
+impl WhisperRecognizer {
     pub fn new(
         model_path: &str, 
         sample_rate: u32,
+        chunk_duration_secs: u32,
         text_sender: mpsc::Sender<RecognizedText>,
     ) -> Result<Self> {
-        log::info!("Loading Vosk model from: {}", model_path);
-        let model = Model::new(model_path).ok_or_else(|| anyhow::anyhow!("Failed to load Vosk model"))?;
-        let recognizer = Recognizer::new(&model, sample_rate as f32).ok_or_else(|| anyhow::anyhow!("Failed to create Vosk recognizer"))?;
+        log::info!("Loading Whisper model from: {}", model_path);
+        let context = WhisperContext::new_with_params(
+            model_path,
+            WhisperContextParameters::default()
+        )?;
         
-        log::info!("Vosk model loaded successfully");
+        log::info!("Whisper model loaded successfully");
+        
+        // Process audio in configurable chunks for real-time transcription
+        // Example: At 16kHz, 3 seconds = 48,000 samples
+        let chunk_size = (sample_rate * chunk_duration_secs) as usize;
+        
+        log::info!(
+            "Real-time transcription configured: {} second chunks ({} samples at {} Hz)",
+            chunk_duration_secs,
+            chunk_size,
+            sample_rate
+        );
         
         Ok(Self {
-            recognizer,
+            context,
             text_sender,
+            buffer: Vec::with_capacity(chunk_size * 2),
+            chunk_size,
+            sample_rate,
         })
     }
     
@@ -43,62 +63,101 @@ impl VoskRecognizer {
             return Ok(());
         }
         
-        // Convert f32 to i16
-        let samples_i16: Vec<i16> = samples.iter()
-            .map(|&s| (s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16)
-            .collect();
+        // Add samples to buffer
+        self.buffer.extend_from_slice(samples);
         
-        // Accept waveform expects &[i16], returns Result<DecodingState, AcceptWaveformError>
-        match self.recognizer.accept_waveform(&samples_i16) {
-            Ok(_) => {
-                if let Some(result) = self.recognizer.result().single() {
-                    let text = result.text;
-                    if !text.is_empty() {
-                        println!("🎤 Recognized: {}", text);
-                        // Send to writer thread (non-blocking)
-                        let _ = self.text_sender.send(RecognizedText {
-                            text: text.to_string(),
-                            timestamp: Local::now(),
-                            is_final: false,
-                        });
-                    }
+        // Process complete chunks
+        while self.buffer.len() >= self.chunk_size {
+            let chunk: Vec<f32> = self.buffer.drain(..self.chunk_size).collect();
+            self.transcribe_chunk(&chunk, false)?;
+        }
+        
+        Ok(())
+    }
+    
+    fn transcribe_chunk(&mut self, samples: &[f32], is_final: bool) -> Result<()> {
+        // Set up parameters for real-time transcription
+        let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+        params.set_print_progress(false);
+        params.set_print_special(false);
+        params.set_print_realtime(false);
+        params.set_print_timestamps(false);
+        params.set_language(Some("en"));
+        params.set_n_threads(2); // Use 2 threads for faster processing
+        params.set_translate(false);
+        
+        // Create a new state for this transcription
+        let mut state = self.context.create_state()?;
+        
+        // Run transcription
+        state.full(params, samples)?;
+        
+        // Extract transcribed text
+        let num_segments = state.full_n_segments();
+        let mut full_text = String::new();
+        
+        for i in 0..num_segments {
+            if let Some(segment) = state.get_segment(i) {
+                if let Ok(text) = segment.to_str() {
+                    full_text.push_str(text);
+                    full_text.push(' ');
                 }
-            },
-            Err(e) => {
-                log::error!("accept_waveform error: {:?}", e);
             }
+        }
+        
+        let full_text = full_text.trim().to_string();
+        
+        if !full_text.is_empty() {
+            if is_final {
+                println!("🎤 Final: {}", full_text);
+            } else {
+                println!("🎤 Recognized: {}", full_text);
+            }
+            
+            // Send to writer thread (non-blocking)
+            let _ = self.text_sender.send(RecognizedText {
+                text: full_text,
+                timestamp: Local::now(),
+                is_final,
+            });
         }
         
         Ok(())
     }
     
     pub fn finalize(&mut self) -> Result<()> {
-        if let Some(result) = self.recognizer.final_result().single() {
-            let text = result.text;
-            if !text.is_empty() {
-                println!("🎤 Final: {}", text);
-                let _ = self.text_sender.send(RecognizedText {
-                    text: text.to_string(),
-                    timestamp: Local::now(),
-                    is_final: true,
-                });
-            }
+        // Process any remaining buffered samples
+        if !self.buffer.is_empty() {
+            let remaining = self.buffer.clone();
+            self.buffer.clear();
+            
+            // Pad to minimum size if needed (Whisper needs at least some samples)
+            let padded = if remaining.len() < self.sample_rate as usize {
+                let mut padded = remaining.clone();
+                padded.resize(self.sample_rate as usize, 0.0);
+                padded
+            } else {
+                remaining
+            };
+            
+            self.transcribe_chunk(&padded, true)?;
         }
         Ok(())
     }
 }
 
-pub fn vosk_thread(
+pub fn whisper_thread(
     resampled_queue: Arc<BlockingQueue<f32>>,
     text_sender: mpsc::Sender<RecognizedText>,
     config: Arc<Config>,
     stop_signal: Arc<AtomicBool>,
 ) -> Result<()> {
-    log::info!("Vosk recognition thread started");
+    log::info!("Whisper real-time recognition thread started");
     
-    let mut recognizer = VoskRecognizer::new(
-        &config.vosk_model_path,
+    let mut recognizer = WhisperRecognizer::new(
+        &config.whisper_model_path_realtime,
         config.sample_rate,
+        config.chunk_duration_secs,
         text_sender,
     )?;
     
@@ -116,7 +175,7 @@ pub fn vosk_thread(
     }
     
     recognizer.finalize()?;
-    log::info!("Vosk recognition thread finished");
+    log::info!("Whisper recognition thread finished");
     
     Ok(())
 }

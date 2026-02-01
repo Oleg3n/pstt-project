@@ -12,7 +12,7 @@ pub fn transcribe_with_whisper(
     use std::io::Write;
     use whisper_rs::WhisperContextParameters;
     
-    log::info!("Loading Whisper model from: {}", model_path);
+    log::info!("Loading Whisper accurate model from: {}", model_path);
     let ctx = WhisperContext::new_with_params(model_path, WhisperContextParameters::default())?;
         
         log::info!("Loading audio from: {}", wav_path.display());
@@ -50,7 +50,7 @@ pub fn transcribe_with_whisper(
         writeln!(file, "{}", full_text.trim())?;
         
         log::info!("Accurate transcription saved to: {}", output_path);
-        println!("📝 Accurate transcription saved to: {}", output_path);
+        println!("ðŸ“ Accurate transcription saved to: {}", output_path);
         
         Ok(full_text)
 }

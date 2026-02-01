@@ -13,15 +13,23 @@ audio_gain = 3.0
 # Can be absolute path (e.g., "/home/user/recordings") or relative (e.g., "./recordings")
 output_directory = "./recordings"
 
-# Path to Vosk model directory
-# Download from: https://alphacephei.com/vosk/models
-# Example: vosk-model-small-en-us-0.15
-vosk_model_path = "./models/vosk-model-small-en-us-0.15"
-
-# Path to Whisper model file (optional, only if using --features whisper)
+# Path to Whisper model file for REAL-TIME recognition
+# Use a faster, smaller model for better performance (Tiny or Base recommended)
 # Download from: https://huggingface.co/ggerganov/whisper.cpp
-# Example: ggml-base.en.bin
-whisper_model_path = "./models/ggml-base.en.bin"
+# Examples: ggml-tiny.en.bin (75 MB), ggml-base.en.bin (140 MB)
+whisper_model_path_realtime = "./models/ggml-base.en.bin"
+
+# Path to Whisper model file for ACCURATE post-processing transcription
+# Use a larger, more accurate model for best results (Small, Medium, or Large)
+# Download from: https://huggingface.co/ggerganov/whisper.cpp
+# Examples: ggml-small.en.bin (460 MB), ggml-medium.en.bin (1.5 GB)
+whisper_model_path_accurate = "./models/ggml-small.en.bin"
+
+# Chunk duration for real-time transcription (in seconds)
+# Lower values = faster response but potentially lower accuracy
+# Higher values = better accuracy but longer wait times
+# Recommended: 3-5 seconds for real-time, 10+ for best accuracy
+chunk_duration_secs = 3
 
 # Enable accurate recognition with Whisper after recording stops
 # Set to false if you only want real-time Vosk transcription

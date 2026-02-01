@@ -25,20 +25,28 @@ xcode-select --install
 ### Windows
 Install [Visual C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
 
-## Step 3: Download Vosk Model
+## Step 3: Download Whisper Model
 
 ```bash
 # Create models directory
 mkdir -p models
 cd models
 
-# Download small English model (~40 MB)
-wget https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
-unzip vosk-model-small-en-us-0.15.zip
+# Download Whisper base English model (~142 MB)
+wget https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
+
+# (Optional) Download other Whisper models:
+# tiny (~77 MB):
+# wget https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin
+# medium (~466 MB):
+# wget https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.en.bin
+# large-v2 (~1.5 GB):
+# wget https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v2.bin
 
 # Go back to project root
 cd ..
 ```
+
 
 ## Step 4: Verify config.toml
 

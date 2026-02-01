@@ -1,16 +1,16 @@
 # Private Speech-to-Text (PSTT)
 
-A terminal-based voice recorder with real-time speech-to-text transcription using Vosk, written in Rust.
+A terminal-based voice recorder with real-time speech-to-text transcription using Whisper, written in Rust.
 
 ## Features
 
 - 🎙️ Select from available microphones
-- ⏺️ Record audio with keyboard controls (Enter/Esc)
+- ▶️ Record audio with keyboard controls (Enter/Esc)
 - 🔄 Real-time audio resampling to configurable sample rate
 - 💾 Save recordings as WAV files with timestamp filenames
-- 🤖 Real-time speech recognition using Vosk
+- 🤖 **Dual-model system**: Fast model for real-time, accurate model for post-processing
 - 📝 Save transcriptions to text files
-- 🎯 Optional accurate transcription with Whisper (feature flag)
+- 🎯 Configurable chunk size for real-time transcription
 - ⚡ Multi-threaded architecture for optimal performance
 - 🔒 Privacy-focused: All processing happens locally
 
@@ -18,11 +18,30 @@ A terminal-based voice recorder with real-time speech-to-text transcription usin
 
 ```
 Thread 1: Mic Capture → Ring Buffer A
-Thread 2: Resampler (Ring Buffer A → Ring Buffer B)
+Thread 2: Resampler (Ring Buffer A → Ring Buffer B & C)
 Thread 3: WAV Writer (Ring Buffer B → disk)
-Thread 4: Vosk Recognition (Ring Buffer B → text queue)
+Thread 4: Whisper Real-Time Recognition (Ring Buffer C → text queue)
 Thread 5: Text Writer (text queue → disk)
+Post-Recording: Whisper Accurate Recognition (WAV file → accurate text)
 ```
+
+## Dual-Model System
+
+PSTT uses **two separate Whisper models** for optimal performance:
+
+1. **Real-Time Model** (Fast & Responsive)
+   - Used during recording for live transcription
+   - Processes audio in configurable chunks (default: 3 seconds)
+   - **Recommended**: Tiny or Base model
+   - Trade-off: Speed over accuracy
+
+2. **Accurate Model** (Slow & Precise)
+   - Used after recording stops for post-processing
+   - Processes the entire audio file at once
+   - **Recommended**: Small, Medium, or Large model
+   - Trade-off: Accuracy over speed
+
+This gives you **the best of both worlds**: immediate feedback during recording and high-quality transcription afterwards!
 
 ## Prerequisites
 
@@ -57,22 +76,32 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source $HOME/.cargo/env
 ```
 
-### Vosk Model
+### Whisper Models
 
-Download a Vosk model from [https://alphacephei.com/vosk/models](https://alphacephei.com/vosk/models)
+Download Whisper models from [https://huggingface.co/ggerganov/whisper.cpp](https://huggingface.co/ggerganov/whisper.cpp)
 
-Recommended for English:
-- Small: `vosk-model-small-en-us-0.15` (~40 MB)
-- Large: `vosk-model-en-us-0.22` (~1.8 GB)
+**Recommended Setup:**
+- **Real-time**: `ggml-base.en.bin` (140 MB) - Fast and responsive
+- **Accurate**: `ggml-small.en.bin` (460 MB) - High accuracy
+
+Available models:
+- **Tiny**: `ggml-tiny.en.bin` (~75 MB) - Fastest, lowest accuracy
+- **Base**: `ggml-base.en.bin` (~140 MB) - Good balance ⭐
+- **Small**: `ggml-small.en.bin` (~460 MB) - Better accuracy ⭐
+- **Medium**: `ggml-medium.en.bin` (~1.5 GB) - High accuracy
+- **Large**: `ggml-large.bin` (~2.9 GB) - Best accuracy
 
 ```bash
 # Create models directory
 mkdir -p models
-
-# Download and extract (example for small English model)
 cd models
-wget https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
-unzip vosk-model-small-en-us-0.15.zip
+
+# Download real-time model (Base - recommended)
+wget https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
+
+# Download accurate model (Small - recommended)
+wget https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin
+
 cd ..
 ```
 
@@ -83,11 +112,7 @@ cd ..
 3. Build the project:
 
 ```bash
-# Standard build (without Whisper)
 cargo build --release
-
-# With Whisper support (optional)
-cargo build --release --features whisper
 ```
 
 ## Configuration
@@ -96,6 +121,7 @@ Edit `config.toml`:
 
 ```toml
 # Audio sample rate for processing (Hz)
+# Whisper works best with 16000 Hz
 sample_rate = 16000
 
 # Audio gain/amplification multiplier
@@ -107,14 +133,22 @@ audio_gain = 3.0
 # Directory where recordings will be saved
 output_directory = "./recordings"
 
-# Path to Vosk model directory
-vosk_model_path = "./models/vosk-model-small-en-us-0.15"
+# Path to Whisper model file for REAL-TIME recognition
+# Use a faster, smaller model (Tiny or Base recommended)
+whisper_model_path_realtime = "./models/ggml-base.en.bin"
 
-# Path to Whisper model file (only needed if using --features whisper)
-whisper_model_path = "./models/ggml-base.en.bin"
+# Path to Whisper model file for ACCURATE post-processing
+# Use a larger, more accurate model (Small, Medium, or Large)
+whisper_model_path_accurate = "./models/ggml-small.en.bin"
 
-# Enable accurate recognition with Whisper after recording
-enable_accurate_recognition = false
+# Chunk duration for real-time transcription (in seconds)
+# Lower = faster response, Higher = better accuracy
+# Recommended: 3-5 seconds for real-time
+chunk_duration_secs = 3
+
+# Enable accurate post-processing transcription after recording
+# Set to false if you only want real-time transcription
+enable_accurate_recognition = true
 ```
 
 ## Usage
@@ -131,8 +165,14 @@ cargo run --release
 
 **Controls:**
 - **Enter** - Start recording
-- **Esc** - Stop recording
+- **Esc** - Stop recording (triggers accurate transcription if enabled)
 - **Ctrl+C** - Exit application
+
+**What happens when you record:**
+1. Press Enter → Recording starts
+2. Real-time model processes audio in chunks → See transcription appear live
+3. Press Esc → Recording stops
+4. Accurate model processes entire recording → Better transcription saved
 
 ### Accurate Transcription Mode
 
@@ -146,15 +186,54 @@ cargo run --release -- accurate /path/to/recording.wav
 cargo run --release -- accurate 31-01-2026_14-30-45.wav
 ```
 
-**Note:** Requires building with `--features whisper`
-
 ## Output Files
 
 When you record, the following files are created in the `output_directory`:
 
 - `DD-MM-YYYY_HH-MI-SS.wav` - Audio recording
-- `DD-MM-YYYY_HH-MI-SS_real-time.txt` - Real-time Vosk transcription
-- `DD-MM-YYYY_HH-MI-SS_accurate.txt` - Accurate Whisper transcription (if enabled)
+- `DD-MM-YYYY_HH-MI-SS_real-time.txt` - Real-time transcription (from fast model)
+- `DD-MM-YYYY_HH-MI-SS_accurate.txt` - Accurate transcription (from accurate model)
+
+## Model Configuration Examples
+
+### For Maximum Speed (Low-end hardware)
+```toml
+whisper_model_path_realtime = "./models/ggml-tiny.en.bin"
+whisper_model_path_accurate = "./models/ggml-base.en.bin"
+chunk_duration_secs = 3
+```
+
+### Balanced (Recommended) ⭐
+```toml
+whisper_model_path_realtime = "./models/ggml-base.en.bin"
+whisper_model_path_accurate = "./models/ggml-small.en.bin"
+chunk_duration_secs = 3
+```
+
+### For Maximum Accuracy (Powerful hardware)
+```toml
+whisper_model_path_realtime = "./models/ggml-small.en.bin"
+whisper_model_path_accurate = "./models/ggml-medium.en.bin"
+chunk_duration_secs = 5
+```
+
+### Same Model for Both (Simplest setup)
+```toml
+whisper_model_path_realtime = "./models/ggml-base.en.bin"
+whisper_model_path_accurate = "./models/ggml-base.en.bin"
+chunk_duration_secs = 3
+enable_accurate_recognition = false  # Optional: Skip redundant processing
+```
+
+## How Real-Time Transcription Works
+
+The real-time recognizer processes audio in **configurable chunks** (default: 3 seconds):
+- Audio samples accumulate in a buffer
+- When chunk duration is reached, it's transcribed immediately
+- Results appear with minimal delay (typically 3-7 seconds total)
+- At the end, any remaining audio is transcribed
+
+After recording stops (if enabled), the accurate model processes the complete audio file for best results.
 
 ## Logging
 
@@ -178,36 +257,65 @@ RUST_LOG=warn cargo run --release
 - On Linux, ensure ALSA is properly configured
 - Try: `arecord -l` (Linux) or check System Preferences (macOS)
 
-### "Failed to load Vosk model"
-- Verify the model path in `config.toml` is correct
-- Ensure you've extracted the model (not just downloaded the zip)
-- Check the directory structure: `models/vosk-model-small-en-us-0.15/`
+### "Failed to load Whisper model"
+- Verify the model paths in `config.toml` are correct
+- Ensure you've downloaded the correct model format (`.bin` file)
+- Check the files aren't corrupted (re-download if needed)
+- Make sure both model paths exist (realtime and accurate)
+
+### Real-time transcription is slow
+- Use Tiny or Base model for real-time
+- Reduce `chunk_duration_secs` (try 2-3 seconds)
+- Close other CPU-intensive applications
+- Consider using a smaller model
+
+### Accurate transcription is slow
+- This is normal! Larger models take longer
+- Small model: ~30 seconds for 1 minute of audio
+- Medium model: ~60 seconds for 1 minute of audio
+- You can disable it with `enable_accurate_recognition = false`
 
 ### "Ring buffer overflow" warnings
 - Your CPU may be overloaded
-- Try closing other applications
-- Consider using a smaller Vosk model
+- Try using a smaller/faster real-time model
+- Increase chunk duration to reduce processing frequency
+- Close other applications
 
 ### Audio quality issues
 - Adjust `sample_rate` in config (16000 Hz is standard for speech)
 - **If too quiet**: Increase `audio_gain` (try 2.0, 3.0, or even 5.0)
 - **If distorted/clipping**: Decrease `audio_gain` (try 0.5 or 0.8)
 - Check your microphone settings in OS
-- Ensure microphone is not too far away
-- Test microphone gain in system settings first
+
+### Transcription accuracy issues
+- For real-time: Try a larger model (Tiny → Base → Small)
+- For accurate: Use Small, Medium, or Large model
+- Increase `chunk_duration_secs` for better context
+- Verify `audio_gain` isn't causing distortion
+- Check background noise levels
 
 ## Performance
 
-Typical CPU usage during recording:
+### Real-Time Transcription (with Base model)
 - Microphone capture: ~2%
 - Resampler: ~15%
 - WAV writer: ~3%
-- Vosk recognition: ~30%
-- **Total: ~50% of one CPU core**
+- Whisper real-time: ~40-60%
+- **Total: ~60-80% of one CPU core**
 
-Memory usage:
-- ~200 MB with small Vosk model
-- ~2 GB with large Vosk model
+### Accurate Post-Processing
+- Depends on model size and audio length
+- Tiny: 0.5x realtime (30s audio → 15s processing)
+- Base: 1x realtime (30s audio → 30s processing)
+- Small: 2x realtime (30s audio → 60s processing)
+- Medium: 4x realtime (30s audio → 120s processing)
+
+### Memory Usage
+- Tiny: ~300 MB
+- Base: ~500 MB
+- Small: ~1 GB
+- Medium: ~2.5 GB
+- Large: ~4 GB
 
 ## Building for Production
 
@@ -221,14 +329,26 @@ strip target/release/pstt
 # The binary is now at: target/release/pstt
 ```
 
+## Why Dual Models?
+
+**Single Model Approach** (old way):
+- Use Base model → Fast real-time but mediocre accuracy
+- Use Large model → Great accuracy but sluggish real-time
+
+**Dual Model Approach** (new way):
+- Base for real-time → Fast feedback during recording
+- Small/Medium for accurate → Best quality final transcription
+- **Result**: Responsive experience + accurate results!
+
 ## License
 
 This project is provided as-is for educational and personal use.
 
 ## Credits
 
-- **Vosk** - Offline speech recognition
-- **Whisper** - Accurate transcription (optional)
+- **Whisper** - OpenAI's robust speech recognition
+- **whisper.cpp** - C++ implementation by Georgi Gerganov
+- **whisper-rs** - Rust bindings
 - **cpal** - Cross-platform audio I/O
 - **Rubato** - Audio resampling
 - Rust community for excellent crates
@@ -236,8 +356,9 @@ This project is provided as-is for educational and personal use.
 ## TODO
 
 - [ ] GUI version
+- [ ] VAD (Voice Activity Detection) to reduce processing
+- [ ] Dynamic chunk sizing based on pauses
 - [ ] More language support
-- [ ] VAD (Voice Activity Detection)
 - [ ] Punctuation restoration
 - [ ] Speaker diarization
 - [ ] Cloud backup integration

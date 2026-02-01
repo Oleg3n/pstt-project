@@ -8,9 +8,10 @@ pub struct Config {
     pub sample_rate: u32,
     pub audio_gain: f32,
     pub output_directory: String,
-    pub vosk_model_path: String,
-    pub whisper_model_path: String,
+    pub whisper_model_path_realtime: String,
+    pub whisper_model_path_accurate: String,
     pub enable_accurate_recognition: bool,
+    pub chunk_duration_secs: u32,
 }
 
 impl Config {
@@ -47,10 +48,21 @@ impl Config {
             anyhow::bail!("audio_gain must be between 0.0 and 10.0 (recommended: 1.0-5.0)");
         }
         
-        // Check if Vosk model path exists
-        if !Path::new(&self.vosk_model_path).exists() {
-            log::warn!("Vosk model path does not exist: {}", self.vosk_model_path);
-            log::warn!("Please download a model from https://alphacephei.com/vosk/models");
+        // Validate chunk duration
+        if self.chunk_duration_secs < 1 || self.chunk_duration_secs > 30 {
+            anyhow::bail!("chunk_duration_secs must be between 1 and 30 seconds (recommended: 3-5 seconds)");
+        }
+        
+        // Check if real-time Whisper model path exists
+        if !Path::new(&self.whisper_model_path_realtime).exists() {
+            log::warn!("Real-time Whisper model path does not exist: {}", self.whisper_model_path_realtime);
+            log::warn!("Please download a model from https://huggingface.co/ggerganov/whisper.cpp");
+        }
+        
+        // Check if accurate Whisper model path exists (only if accurate recognition is enabled)
+        if self.enable_accurate_recognition && !Path::new(&self.whisper_model_path_accurate).exists() {
+            log::warn!("Accurate Whisper model path does not exist: {}", self.whisper_model_path_accurate);
+            log::warn!("Please download a model from https://huggingface.co/ggerganov/whisper.cpp");
         }
         
         // Create output directory if it doesn't exist
