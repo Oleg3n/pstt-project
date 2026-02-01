@@ -27,6 +27,7 @@ Install [Visual C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-b
 
 ## Step 3: Download Whisper Model
 
+Models list: https://huggingface.co/ggerganov/whisper.cpp
 ```bash
 # Create models directory
 mkdir -p models

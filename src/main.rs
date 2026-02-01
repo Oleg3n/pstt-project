@@ -115,21 +115,21 @@ impl RecordingSession {
         };
         threads.push(writer_handle);
 
-        // Thread 4: Whisper Recognition
-        let whisper_handle = {
+        // Thread 4: Vosk Real-Time Recognition
+        let vosk_handle = {
             let resampled_q = Arc::clone(&pipeline.resampled_queue_vosk);
             let cfg = Arc::clone(&config);
             let stop = Arc::clone(&stop_signal);
             let tx = text_tx.clone();
             std::thread::spawn(move || {
-                match recognition::whisper_thread(resampled_q, tx, cfg, stop) {
-                    Ok(_) => log::info!("Whisper recognition completed"),
-                    Err(e) => log::error!("Whisper thread error: {}", e),
+                match recognition::vosk_thread(resampled_q, tx, cfg, stop) {
+                    Ok(_) => log::info!("Vosk recognition completed"),
+                    Err(e) => log::error!("Vosk thread error: {}", e),
                 }
-                log::info!("Whisper recognition thread exiting");
+                log::info!("Vosk recognition thread exiting");
             })
         };
-        threads.push(whisper_handle);
+        threads.push(vosk_handle);
 
         // Thread 5: Text Writer
         let text_writer_handle = {
@@ -182,6 +182,7 @@ impl RecordingSession {
         wav_path
     }
 }
+
 fn run_recording_mode(config: Arc<Config>) -> Result<()> {
     println!("╔══════════════════════════════════════════════════════════════╗");
     println!("║         Private Speech-to-Text (PSTT) v0.1.0                 ║");
@@ -189,7 +190,7 @@ fn run_recording_mode(config: Arc<Config>) -> Result<()> {
     println!();
     
     // List available microphones
-    println!("📡 Available microphones:");
+    println!("ðŸ“¡ Available microphones:");
     let devices = audio::list_input_devices()?;
     
     if devices.is_empty() {
@@ -217,7 +218,7 @@ fn run_recording_mode(config: Arc<Config>) -> Result<()> {
     }
     
     let device = audio::select_device(index)?;
-    println!("✓ Selected: {}", devices[index].1);
+    println!("âœ“ Selected: {}", devices[index].1);
     println!();
     
     println!("Controls:");
@@ -257,14 +258,14 @@ fn run_recording_mode(config: Arc<Config>) -> Result<()> {
                 }
             }
             disable_raw_mode()?;
-            println!("\n\n👋 Goodbye!");
+            println!("\n\nðŸ‘‹ Goodbye!");
             break;
         }
-
+        
         match check_input()? {
             InputCommand::StartRecording => {
                 if !is_recording {
-                    println!("\n🔴 Recording started...");
+                    println!("\nðŸ”´ Recording started...");
                     session = Some(RecordingSession::start(device.clone(), Arc::clone(&config))?);
                     is_recording = true;
                 }
@@ -274,6 +275,7 @@ fn run_recording_mode(config: Arc<Config>) -> Result<()> {
                     println!("\n⏹️  Stopping recording...");
                     if let Some(s) = session.take() {
                         let wav_path = s.stop();
+                        
                         // Optionally run Whisper for accurate transcription
                         if config.enable_accurate_recognition {
                             if let Some(path) = wav_path {
@@ -292,20 +294,19 @@ fn run_recording_mode(config: Arc<Config>) -> Result<()> {
                         }
                     }
                     is_recording = false;
+                    
                     println!("\n✅ Recording saved. Press Enter to record again, or Ctrl+C to exit.");
                 }
             }
             InputCommand::Exit => {
                 running.store(false, Ordering::Relaxed);
-                println!("DEBUG: EXIT running = {}", running.load(Ordering::Relaxed));
             }
             InputCommand::None => {}
         }
     }
-
+    
     Ok(())
 }
-
 
 fn run_accurate_mode(config: Arc<Config>, wav_file: String) -> Result<()> {
     println!("Running accurate transcription on: {}", wav_file);

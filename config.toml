@@ -1,7 +1,7 @@
 # Private Speech-to-Text Configuration
 
 # Audio sample rate for processing (Hz)
-# Vosk models typically work with 16000 Hz
+# Both Vosk and Whisper work well with 16000 Hz
 sample_rate = 16000
 
 # Audio gain/amplification (1.0 = no change, 2.0 = double, 3.0 = triple)
@@ -13,23 +13,19 @@ audio_gain = 3.0
 # Can be absolute path (e.g., "/home/user/recordings") or relative (e.g., "./recordings")
 output_directory = "./recordings"
 
-# Path to Whisper model file for REAL-TIME recognition
-# Use a faster, smaller model for better performance (Tiny or Base recommended)
-# Download from: https://huggingface.co/ggerganov/whisper.cpp
-# Examples: ggml-tiny.en.bin (75 MB), ggml-base.en.bin (140 MB)
-whisper_model_path_realtime = "./models/ggml-base.en.bin"
+# Path to Vosk model directory for REAL-TIME streaming recognition
+# Vosk is designed for streaming and provides instant, low-latency feedback during recording
+# Download from: https://alphacephei.com/vosk/models
+# Recommended: vosk-model-small-en-us-0.15 (40 MB) - good balance of speed and accuracy
+# Alternative: vosk-model-en-us-0.22 (1.8 GB) - better accuracy, higher CPU usage   
+vosk_model_path = "./models/vosk-model-small-en-us-0.15"
 
 # Path to Whisper model file for ACCURATE post-processing transcription
-# Use a larger, more accurate model for best results (Small, Medium, or Large)
+# Whisper provides the highest quality transcription after recording stops
 # Download from: https://huggingface.co/ggerganov/whisper.cpp
-# Examples: ggml-small.en.bin (460 MB), ggml-medium.en.bin (1.5 GB)
+# Recommended: ggml-small.en.bin (460 MB) - high accuracy
+# Alternative: ggml-medium.en.bin (1.5 GB) - best accuracy, slower
 whisper_model_path_accurate = "./models/ggml-small.en.bin"
-
-# Chunk duration for real-time transcription (in seconds)
-# Lower values = faster response but potentially lower accuracy
-# Higher values = better accuracy but longer wait times
-# Recommended: 3-5 seconds for real-time, 10+ for best accuracy
-chunk_duration_secs = 3
 
 # Enable accurate recognition with Whisper after recording stops
 # Set to false if you only want real-time Vosk transcription
