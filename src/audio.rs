@@ -6,7 +6,7 @@ pub fn list_input_devices() -> Result<Vec<(usize, String)>> {
     let devices: Result<Vec<_>> = host.input_devices()?
         .enumerate()
         .map(|(i, device)| {
-            let name = device.name().unwrap_or_else(|_| "Unknown".to_string());
+            let name = device.description().map(|desc| desc.to_string()).unwrap_or_else(|_| "Unknown".to_string());
             Ok((i, name))
         })
         .collect();
@@ -23,7 +23,7 @@ pub fn select_device(index: usize) -> Result<cpal::Device> {
 }
 
 pub fn get_device_info(device: &cpal::Device) -> Result<(String, cpal::SupportedStreamConfig)> {
-    let name = device.name()?;
+    let name = device.description().map(|desc| desc.to_string()).unwrap_or_else(|_| "Unknown".to_string());
     let config = device.default_input_config()?;
     Ok((name, config))
 }

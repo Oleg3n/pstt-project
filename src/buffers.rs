@@ -29,32 +29,6 @@ impl<T> BlockingQueue<T> {
         true
     }
     
-    pub fn push_single(&self, item: T) -> bool {
-        let mut queue = self.queue.lock().unwrap();
-        
-        if queue.len() >= self.max_size {
-            log::warn!("Queue full! Dropping item");
-            return false;
-        }
-        
-        queue.push_back(item);
-        self.condvar.notify_one();
-        true
-    }
-    
-    pub fn pop_batch(&self, max_count: usize) -> Vec<T> {
-        let mut queue = self.queue.lock().unwrap();
-        
-        // Wait until data is available
-        while queue.is_empty() {
-            queue = self.condvar.wait(queue).unwrap();
-        }
-        
-        // Pop up to max_count items
-        let count = queue.len().min(max_count);
-        queue.drain(..count).collect()
-    }
-    
     pub fn try_pop_batch(&self, max_count: usize) -> Option<Vec<T>> {
         let mut queue = self.queue.lock().unwrap();
         
@@ -66,13 +40,6 @@ impl<T> BlockingQueue<T> {
         Some(queue.drain(..count).collect())
     }
     
-    pub fn len(&self) -> usize {
-        self.queue.lock().unwrap().len()
-    }
-    
-    pub fn is_empty(&self) -> bool {
-        self.queue.lock().unwrap().is_empty()
-    }
 }
 
 pub struct AudioPipeline {

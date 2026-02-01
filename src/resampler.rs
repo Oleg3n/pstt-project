@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use crate::buffers::BlockingQueue;
 use crate::config::Config;
+use std::time::Duration;
 
 pub struct AudioResampler {
     resampler: SincFixedIn<f32>,
@@ -118,8 +119,41 @@ pub fn resampler_thread(
                input_rate, output_rate, chunk_size, gain);
     
     while !stop_signal.load(Ordering::Relaxed) {
-        let samples = raw_queue.pop_batch(4096);
-        
+        if let Some(samples) = raw_queue.try_pop_batch(4096) {
+            // Convert stereo to mono if needed (average channels)
+            let mono_samples: Vec<f32> = if samples.len() % 2 == 0 {
+                samples.chunks(2)
+                    .map(|chunk| (chunk[0] + chunk.get(1).unwrap_or(&0.0)) / 2.0)
+                    .collect()
+            } else {
+                samples
+            };
+            
+            // Apply gain (amplification)
+            let amplified: Vec<f32> = mono_samples.iter()
+                .map(|&s| (s * gain).clamp(-1.0, 1.0))  // Apply gain and clamp to prevent clipping
+                .collect();
+            
+            // Process samples (will buffer internally until chunk_size is reached)
+            match resampler.process(&amplified) {
+                Ok(resampled) => {
+                    if !resampled.is_empty() {
+                        if !resampled_queue.push(resampled) {
+                            log::warn!("Resampler: Failed to push to resampled queue");
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::error!("Resampling error: {}", e);
+                }
+            }
+        } else {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+    
+    // Drain remaining samples in raw_queue
+    while let Some(samples) = raw_queue.try_pop_batch(4096) {
         // Convert stereo to mono if needed (average channels)
         let mono_samples: Vec<f32> = if samples.len() % 2 == 0 {
             samples.chunks(2)

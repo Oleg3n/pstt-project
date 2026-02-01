@@ -48,6 +48,7 @@ struct RecordingSession {
 }
 
 impl RecordingSession {
+
     fn start(device: cpal::Device, config: Arc<Config>) -> Result<Self> {
         let (device_name, device_config) = audio::get_device_info(&device)?;
         log::info!("Using device: {} ({:?})", device_name, device_config);
@@ -83,44 +84,44 @@ impl RecordingSession {
             let resampled_q = Arc::clone(&pipeline.resampled_queue);
             let cfg = Arc::clone(&config);
             let stop = Arc::clone(&stop_signal);
-            
             std::thread::spawn(move || {
                 resampler::resampler_thread(raw_q, resampled_q, cfg, stop);
+                log::info!("Resampler thread exiting");
             })
         };
         threads.push(resampler_handle);
-        
+
         // Thread 3: WAV Writer
         let writer_handle = {
             let resampled_q = Arc::clone(&pipeline.resampled_queue);
             let cfg = Arc::clone(&config);
             let stop = Arc::clone(&stop_signal);
-            
             std::thread::spawn(move || {
                 match writer::writer_thread(resampled_q, cfg, stop) {
                     Ok(path) => log::info!("Recording saved: {}", path.display()),
                     Err(e) => log::error!("Writer thread error: {}", e),
                 }
+                log::info!("WAV writer thread exiting");
             })
         };
         threads.push(writer_handle);
-        
+
         // Thread 4: Vosk Recognition
         let vosk_handle = {
             let resampled_q = Arc::clone(&pipeline.resampled_queue);
             let cfg = Arc::clone(&config);
             let stop = Arc::clone(&stop_signal);
             let tx = text_tx.clone();
-            
             std::thread::spawn(move || {
                 match recognition::vosk_thread(resampled_q, tx, cfg, stop) {
                     Ok(_) => log::info!("Vosk recognition completed"),
                     Err(e) => log::error!("Vosk thread error: {}", e),
                 }
+                log::info!("Vosk recognition thread exiting");
             })
         };
         threads.push(vosk_handle);
-        
+
         // Thread 5: Text Writer
         let text_writer_handle = {
             let timestamp = Local::now().format("%d-%m-%Y_%H-%M-%S");
@@ -129,12 +130,12 @@ impl RecordingSession {
                 config.output_directory,
                 timestamp
             );
-            
             std::thread::spawn(move || {
                 match text_writer::text_writer_thread(text_rx, output_path) {
                     Ok(_) => {},
                     Err(e) => log::error!("Text writer thread error: {}", e),
                 }
+                log::info!("Text writer thread exiting");
             })
         };
         threads.push(text_writer_handle);
@@ -170,7 +171,7 @@ impl RecordingSession {
 
 fn run_recording_mode(config: Arc<Config>) -> Result<()> {
     println!("╔══════════════════════════════════════════════════════════════╗");
-    println!("║         Private Speech-to-Text (PSTT) v0.1.0                ║");
+    println!("║         Private Speech-to-Text (PSTT) v0.1.0                 ║");
     println!("╚══════════════════════════════════════════════════════════════╝");
     println!();
     
@@ -232,8 +233,12 @@ fn run_recording_mode(config: Arc<Config>) -> Result<()> {
     
     loop {
         // Check if Ctrl+C was pressed
+        // println!("DEBUG: LOOP running = {}", running.load(Ordering::Relaxed));
         if !running.load(Ordering::Relaxed) {
+            // log::debug!("running = {}", running.load(Ordering::Relaxed));
+            // println!("DEBUG: running = {}", running.load(Ordering::Relaxed));
             if is_recording {
+                // println!("DEBUG: is_recording = {}", is_recording);
                 if let Some(s) = session.take() {
                     s.stop();
                 }
@@ -255,7 +260,10 @@ fn run_recording_mode(config: Arc<Config>) -> Result<()> {
                 if is_recording {
                     println!("\n⏹️  Stopping recording...");
                     if let Some(s) = session.take() {
+                        println!("DEBUG: Stopping recording session");
                         s.stop();
+                        println!("DEBUG: Stopped Recording session");
+
                     }
                     is_recording = false;
                     
@@ -269,7 +277,11 @@ fn run_recording_mode(config: Arc<Config>) -> Result<()> {
                     println!("\n✓ Recording saved. Press Enter to record again, or Ctrl+C to exit.");
                 }
             }
-            InputCommand::Exit | InputCommand::None => {}
+            InputCommand::Exit => {
+                running.store(false, Ordering::Relaxed);
+                println!("DEBUG: EXIT running = {}", running.load(Ordering::Relaxed));
+            }
+            InputCommand::None => {}
         }
     }
     
