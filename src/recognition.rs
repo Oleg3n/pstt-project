@@ -23,14 +23,20 @@ pub struct VoskRecognizer {
 impl VoskRecognizer {
     pub fn new(
         model_path: &str, 
-        sample_rate: u32,
+        sample_rate: f32,
         text_sender: mpsc::Sender<RecognizedText>,
     ) -> Result<Self> {
         log::info!("Loading Vosk model from: {}", model_path);
         let model = Model::new(model_path).ok_or_else(|| anyhow::anyhow!("Failed to load Vosk model"))?;
-        let recognizer = Recognizer::new(&model, sample_rate as f32).ok_or_else(|| anyhow::anyhow!("Failed to create Vosk recognizer"))?;
         
-        log::info!("Vosk model loaded successfully");
+        // Create recognizer with f32 sample rate
+        let mut recognizer = Recognizer::new(&model, sample_rate).ok_or_else(|| anyhow::anyhow!("Failed to create Vosk recognizer"))?;
+        
+        // Configure recognizer for better results
+        recognizer.set_words(true);
+        recognizer.set_partial_words(true);
+        
+        log::info!("Vosk model loaded successfully (sample_rate: {} Hz)", sample_rate);
         
         Ok(Self {
             recognizer,
@@ -43,29 +49,43 @@ impl VoskRecognizer {
             return Ok(());
         }
         
-        // Convert f32 to i16
+        // Convert f32 to i16 (Vosk expects i16 samples)
         let samples_i16: Vec<i16> = samples.iter()
             .map(|&s| (s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16)
             .collect();
         
-        // Accept waveform expects &[i16], returns Result<DecodingState, AcceptWaveformError>
+        // Feed samples to recognizer - returns Result<DecodingState, AcceptWaveformError>
         match self.recognizer.accept_waveform(&samples_i16) {
-            Ok(_) => {
-                if let Some(result) = self.recognizer.result().single() {
-                    let text = result.text;
-                    if !text.is_empty() {
-                        println!("🎤 Recognized: {}", text);
-                        // Send to writer thread (non-blocking)
-                        let _ = self.text_sender.send(RecognizedText {
-                            text: text.to_string(),
-                            timestamp: Local::now(),
-                            is_final: false,
-                        });
+            Ok(state) => {
+                // Check if we have a finalized result
+                if state == vosk::DecodingState::Finalized {
+                    // Get complete result
+                    let result = self.recognizer.result();
+                    
+                    // Try to get single result (most common case)
+                    if let Some(single) = result.single() {
+                        let text = single.text;
+                        if !text.is_empty() {
+                            println!("🎤 Recognized: {}", text);
+                            let _ = self.text_sender.send(RecognizedText {
+                                text: text.to_string(),
+                                timestamp: Local::now(),
+                                is_final: false,
+                            });
+                        }
+                    }
+                } else {
+                    // Get partial result for real-time feedback
+                    let partial = self.recognizer.partial_result();
+                    let text = partial.partial;
+                    
+                    if !text.is_empty() && text.split_whitespace().count() >= 3 {
+                        log::debug!("Partial: {}", text);
                     }
                 }
-            },
+            }
             Err(e) => {
-                log::error!("accept_waveform error: {:?}", e);
+                log::warn!("Accept waveform error: {:?}", e);
             }
         }
         
@@ -73,8 +93,12 @@ impl VoskRecognizer {
     }
     
     pub fn finalize(&mut self) -> Result<()> {
-        if let Some(result) = self.recognizer.final_result().single() {
-            let text = result.text;
+        // Get final result
+        let result = self.recognizer.final_result();
+        
+        // Try to get single result
+        if let Some(single) = result.single() {
+            let text = single.text;
             if !text.is_empty() {
                 println!("🎤 Final: {}", text);
                 let _ = self.text_sender.send(RecognizedText {
@@ -84,6 +108,7 @@ impl VoskRecognizer {
                 });
             }
         }
+        
         Ok(())
     }
 }
@@ -98,7 +123,7 @@ pub fn vosk_thread(
     
     let mut recognizer = VoskRecognizer::new(
         &config.vosk_model_path,
-        config.sample_rate,
+        config.sample_rate as f32,
         text_sender,
     )?;
     
