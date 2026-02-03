@@ -26,6 +26,11 @@ pub fn transcribe_with_whisper(
         params.set_print_special(false);
         params.set_print_realtime(false);
         params.set_print_timestamps(false);
+        params.set_print_special(false);
+        params.set_suppress_blank(true);
+        params.set_suppress_nst(true);
+        params.set_debug_mode(false);
+        
         params.set_language(Some("en"));
         
         log::info!("Transcribing with Whisper...");

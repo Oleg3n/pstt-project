@@ -9,7 +9,7 @@ use crate::config::Config;
 use std::time::Duration;
 
 pub fn generate_filename(output_dir: &str) -> PathBuf {
-    let timestamp = Local::now().format("%d-%m-%Y_%H-%M-%S");
+    let timestamp = Local::now().format("%Y-%m-%d_%H-%M-%S");
     let filename = format!("{}.wav", timestamp);
     PathBuf::from(output_dir).join(filename)
 }
