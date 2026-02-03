@@ -133,7 +133,7 @@ impl RecordingSession {
 
         // Thread 5: Text Writer
         let text_writer_handle = {
-            let timestamp = Local::now().format("%d-%m-%Y_%H-%M-%S");
+            let timestamp = Local::now().format("%Y-%m-%d_%H-%M-%S");
             let output_path = format!(
                 "{}/{}_real-time.txt",
                 config.output_directory,
@@ -284,6 +284,7 @@ fn run_recording_mode(config: Arc<Config>) -> Result<()> {
                                     &path,
                                     &config.whisper_model_path_accurate,
                                     &config.output_directory,
+                                    &config,
                                 ) {
                                     Ok(_) => println!("✅ Accurate transcription completed"),
                                     Err(e) => log::error!("Accurate transcription error: {}", e),
@@ -326,6 +327,7 @@ fn run_accurate_mode(config: Arc<Config>, wav_file: String) -> Result<()> {
         &wav_path,
         &config.whisper_model_path_accurate,
         &config.output_directory,
+        &config,
     )?;
     
     Ok(())

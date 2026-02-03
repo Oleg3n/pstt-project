@@ -7,7 +7,7 @@ sample_rate = 16000
 # Audio gain/amplification (1.0 = no change, 2.0 = double, 3.0 = triple)
 # Increase if recordings are too quiet (try 2.0, 3.0, or higher)
 # Decrease if recordings are distorted (try 0.5)
-audio_gain = 3.0
+audio_gain = 6.2
 
 # Directory where recordings and transcriptions will be saved
 # Can be absolute path (e.g., "/home/user/recordings") or relative (e.g., "./recordings")
