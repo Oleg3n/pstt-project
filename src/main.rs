@@ -105,7 +105,7 @@ impl RecordingSession {
             std::thread::spawn(move || {
                 match writer::writer_thread(resampled_q, cfg, stop) {
                     Ok(path) => {
-                        log::info!("Recording saved: {}", path.display());
+                        log::info!("\n💾 Recording saved: {}", path.display());
                         let _ = path_tx.send(path);
                     },
                     Err(e) => log::error!("Writer thread error: {}", e),
@@ -190,7 +190,7 @@ fn run_recording_mode(config: Arc<Config>) -> Result<()> {
     println!();
     
     // List available microphones
-    println!("ðŸ“¡ Available microphones:");
+    println!("🎙️ Available microphones:");
     let devices = audio::list_input_devices()?;
     
     if devices.is_empty() {
@@ -203,7 +203,7 @@ fn run_recording_mode(config: Arc<Config>) -> Result<()> {
     println!();
     
     // Get user selection
-    print!("Select microphone (1-{}): ", devices.len());
+    print!("🎙️  Select microphone (1-{}): ", devices.len());
     std::io::Write::flush(&mut std::io::stdout())?;
     
     let mut input = String::new();
@@ -214,11 +214,11 @@ fn run_recording_mode(config: Arc<Config>) -> Result<()> {
         .context("Invalid selection")?;
     
     if index >= devices.len() {
-        anyhow::bail!("Selection out of range");
+        anyhow::bail!("\n❌ Selection out of range");
     }
     
     let device = audio::select_device(index)?;
-    println!("âœ“ Selected: {}", devices[index].1);
+    println!("✔️  Selected: {}", devices[index].1);
     println!();
     
     println!("Controls:");
@@ -258,14 +258,14 @@ fn run_recording_mode(config: Arc<Config>) -> Result<()> {
                 }
             }
             disable_raw_mode()?;
-            println!("\n\nðŸ‘‹ Goodbye!");
+            println!("\n\n👋 Goodbye!");
             break;
         }
         
         match check_input()? {
             InputCommand::StartRecording => {
                 if !is_recording {
-                    println!("\nðŸ”´ Recording started...");
+                    println!("\n🔴 Recording started...");
                     session = Some(RecordingSession::start(device.clone(), Arc::clone(&config))?);
                     is_recording = true;
                 }
