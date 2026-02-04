@@ -20,8 +20,11 @@ pub fn transcribe_with_whisper(
     let ctx = WhisperContext::new_with_params(model_path, WhisperContextParameters::default())?;
         
         log::info!("Loading audio from: {}", wav_path.display());
+        let file_size = std::fs::metadata(wav_path)?.len();
+        let file_size_mb = file_size as f64 / (1024.0 * 1024.0);
+        log::info!("Audio file size: {} bytes ({:.2} MB)", file_size, file_size_mb);
+
         let samples = load_audio_samples(wav_path)?;
-        
         log::info!("Loaded {} samples", samples.len());
 
         // Get current gain
