@@ -20,9 +20,14 @@ pub fn transcribe_with_whisper(
     let ctx = WhisperContext::new_with_params(model_path, WhisperContextParameters::default())?;
         
         log::info!("Loading audio from: {}", wav_path.display());
-        let samples = load_audio_samples(wav_path, config)?;
+        let samples = load_audio_samples(wav_path)?;
         
         log::info!("Loaded {} samples", samples.len());
+
+        // Get current gain
+        let current_gain = config.audio_gain;
+
+        analyze_audio_and_recommend_gain(&samples, current_gain)?;
         
         // Set up parameters
         let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
@@ -64,109 +69,249 @@ pub fn transcribe_with_whisper(
         Ok(full_text)
 }
 
-fn load_audio_samples(path: &PathBuf, config: &Config) -> Result<Vec<f32>> {
-    let mut reader = hound::WavReader::open(path)?;
-    let samples: Vec<f32> = reader.samples::<i16>()
-        .map(|s| s.unwrap() as f32 / i16::MAX as f32)
-        .collect();
+pub fn analyze_audio_and_recommend_gain(
+    samples: &[f32],
+    current_gain: f32,
+) -> Result<()> {
+    if samples.is_empty() {
+        return Ok(());
+    }
+
+    // Calculate audio statistics
+    let mut sum_squares = 0.0f64;
+    let mut max_val = 0.0f32;
+    let mut min_val = 0.0f32;
     
-    // Calculate statistics
-    let rms = (samples.iter().map(|&s| s * s).sum::<f32>() / samples.len() as f32).sqrt();
-    let max = samples.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-    let min = samples.iter().cloned().fold(f32::INFINITY, f32::min);
+    let mut very_quiet_count = 0;
+    let mut normal_count = 0;
+    let mut loud_count = 0;
+    let mut very_loud_count = 0;
+    let mut clipped_count = 0;
     
-    let clipped_count = samples.iter()
-        .filter(|&&s| s.abs() > 0.99)
-        .count();
-    let clipped_percent = (clipped_count as f32 / samples.len() as f32) * 100.0;
+    for &sample in samples {
+        let abs_sample = sample.abs();
+        sum_squares += (abs_sample as f64).powi(2);
+        
+        if sample > max_val {
+            max_val = sample;
+        }
+        if sample < min_val {
+            min_val = sample;
+        }
+        
+        // Categorize samples
+        if abs_sample < 0.01 {
+            very_quiet_count += 1;
+        } else if abs_sample < 0.1 {
+            normal_count += 1;
+        } else if abs_sample < 0.5 {
+            loud_count += 1;
+        } else if abs_sample >= 0.99 {
+            clipped_count += 1;
+        } else {
+            very_loud_count += 1;
+        }
+    }
     
+    let rms = (sum_squares / samples.len() as f64).sqrt() as f32;
+    
+    // Calculate percentages
+    let total = samples.len() as f32;
+    let very_quiet_pct = (very_quiet_count as f32 / total) * 100.0;
+    let normal_pct = (normal_count as f32 / total) * 100.0;
+    let loud_pct = (loud_count as f32 / total) * 100.0;
+    let very_loud_pct = (very_loud_count as f32 / total) * 100.0;
+    let clipped_pct = (clipped_count as f32 / total) * 100.0;
+
+
     log::info!("=== AUDIO ANALYSIS ===");
     log::info!("Samples: {}", samples.len());
     log::info!("Duration: {:.1} seconds ({:.1} minutes)", 
-               samples.len() as f32 / 16000.0,
-               samples.len() as f32 / 16000.0 / 60.0);
-    log::info!("");
+            samples.len() as f32 / 16000.0,
+            samples.len() as f32 / 16000.0 / 60.0);
 
-    // Calculate distribution
-    let loud_samples = samples.iter().filter(|&&s| s.abs() > 0.1).count();
-    let very_loud_samples = samples.iter().filter(|&&s| s.abs() > 0.5).count();
-    let quiet_samples = samples.iter().filter(|&&s| s.abs() < 0.01).count();
 
-    let very_quiet_pct = quiet_samples as f32 / samples.len() as f32 * 100.0;
-    let normal_pct = (samples.len() - loud_samples - quiet_samples) as f32 / samples.len() as f32 * 100.0;
-    let loud_pct = loud_samples as f32 / samples.len() as f32 * 100.0;
-    let very_loud_pct = very_loud_samples as f32 / samples.len() as f32 * 100.0;
-
+    // Log audio statistics
+    log::info!("=====================");
     log::info!("Audio Levels:");
     log::info!("  Average (RMS): {:.4}", rms);
-    log::info!("  Peak (max):    {:.4}", max);
-    log::info!("  Minimum (min): {:.4}", min);
+    log::info!("  Peak (max):    {:.4}", max_val);
+    log::info!("  Minimum (min): {:.4}", min_val);
     log::info!("");
-
     log::info!("Distribution:");
     log::info!("  Very quiet (< 0.01): {:.1}%", very_quiet_pct);
     log::info!("  Normal (0.01-0.1):   {:.1}%", normal_pct);
     log::info!("  Loud (> 0.1):        {:.1}%", loud_pct);
     log::info!("  Very loud (> 0.5):   {:.1}%", very_loud_pct);
-    log::info!("  Clipped (≈ 1.0):     {:.2}%", clipped_percent);
+    log::info!("  Clipped (≈ 1.0):     {:.2}%", clipped_pct);
     log::info!("=====================");
     log::info!("");
-
-    // Get current gain
-    let current_gain = config.audio_gain;
-
-    // Smart diagnostics with calculated recommendations
-    if very_quiet_pct > 40.0 {
-        // Calculate recommended gain to achieve RMS ~0.08
-        let target_rms = 0.08;
-        let recommended_gain = (target_rms / rms * current_gain).min(20.0);
-        
-        log::error!("❌ PROBLEM: {:.0}% of audio is very quiet!", very_quiet_pct);
-        log::error!("   This will cause poor transcription quality.");
-        log::error!("");
-        log::error!("   SOLUTION: Increase audio_gain in config.toml");
-        log::error!("   Current: audio_gain = {:.1}", current_gain);
-        log::error!("   Recommended: audio_gain = {:.1}", recommended_gain);
-        log::error!("");
-        if clipped_percent < 1.0 {
-            log::error!("   Note: You have headroom - only {:.2}% clipping", clipped_percent);
-            log::error!("   It's OK to increase gain even if a few samples clip!");
-        }
-    } else if rms < 0.05 {
-        let target_rms = 0.08;
-        let recommended_gain = (target_rms / rms * current_gain).min(20.0);
-        
-        log::warn!("⚠️  Audio is quieter than ideal (RMS = {:.4})", rms);
-        log::warn!("   Recommended RMS: 0.05 - 0.30 for best results");
-        log::warn!("   Current gain: {:.1}", current_gain);
-        log::warn!("   Suggested gain: {:.1}", recommended_gain);
-    } else if rms > 0.5 {
-        let target_rms = 0.15;
-        let recommended_gain = (target_rms / rms * current_gain).max(0.5);
-        
-        log::warn!("⚠️  Audio is very loud (RMS = {:.4})", rms);
-        log::warn!("   Risk of distortion.");
-        log::warn!("   Current gain: {:.1}", current_gain);
-        log::warn!("   Suggested gain: {:.1}", recommended_gain);
-    } else if clipped_percent > 5.0 {
-        let target_rms = 0.15;
-        let recommended_gain = (target_rms / rms * current_gain).max(0.5);
-        
-        log::error!("❌ SEVERE CLIPPING: {:.1}% of samples are clipped!", clipped_percent);
-        log::error!("   Audio is distorted. REDUCE audio_gain in config.toml");
-        log::error!("   Current: audio_gain = {:.1}", current_gain);
-        log::error!("   Recommended: audio_gain = {:.1}", recommended_gain);
-    } else if clipped_percent > 1.0 {
-        log::warn!("⚠️  Moderate clipping: {:.2}% clipped", clipped_percent);
-        log::warn!("   Current gain: {:.1}", current_gain);
-        log::warn!("   Consider reducing to {:.1} for cleaner audio", current_gain * 0.8);
+    
+    // Improved gain recommendation logic
+    let target_rms = 0.08;
+    let target_quiet_pct = 30.0; // Ideal: less than 30% should be very quiet
+    
+    let recommended_gain = if very_quiet_pct > 50.0 {
+        // Case 1: Audio is mostly silence/noise - need MORE gain
+        // Calculate how much more gain we need to reduce quiet percentage
+        let quiet_ratio = very_quiet_pct / target_quiet_pct;
+        let gain_multiplier = quiet_ratio.sqrt().min(3.0); // sqrt to be less aggressive
+        (current_gain * gain_multiplier).min(20.0).max(current_gain * 1.5)
+    } else if rms < target_rms {
+        // Case 2: Audio is present but RMS too low - increase proportionally
+        let rms_ratio = target_rms / rms.max(0.001); // Avoid division by zero
+        (current_gain * rms_ratio).min(20.0)
+    } else if clipped_pct > 1.0 {
+        // Case 3: Too much clipping - decrease gain
+        let clip_reduction = 1.0 - (clipped_pct / 100.0).min(0.5);
+        (current_gain * clip_reduction).max(1.0)
     } else {
-        log::info!("✅ AUDIO QUALITY: Good");
-        log::info!("   RMS level is in optimal range for transcription");
-        log::info!("   Current gain: {:.1}", current_gain);
+        // Case 4: Audio levels are good
+        current_gain
+    };
+    
+    // Determine if there's a problem and show appropriate message
+    let has_problem = very_quiet_pct > 50.0 || rms < 0.05 || clipped_pct > 5.0;
+    
+    if has_problem {
+        if very_quiet_pct > 50.0 {
+            log::error!("❌ PROBLEM: {:.0}% of audio is very quiet!", very_quiet_pct);
+            log::error!("   This will cause poor transcription quality.");
+        } else if clipped_pct > 5.0 {
+            log::error!("❌ PROBLEM: {:.1}% of audio is clipped!", clipped_pct);
+            log::error!("   This causes distortion and poor quality.");
+        } else if rms < 0.05 {
+            log::error!("❌ PROBLEM: Overall audio level too low (RMS: {:.4})", rms);
+            log::error!("   This will cause poor transcription quality.");
+        }
+        
+        log::error!("");
+        
+        // Show the appropriate recommendation
+        if recommended_gain > current_gain {
+            log::error!("   SOLUTION: Increase audio_gain in config.toml");
+            log::error!("   Current: audio_gain = {:.1}", current_gain);
+            log::error!("   Recommended: audio_gain = {:.1}", recommended_gain);
+        } else if recommended_gain < current_gain {
+            log::error!("   SOLUTION: Decrease audio_gain in config.toml");
+            log::error!("   Current: audio_gain = {:.1}", current_gain);
+            log::error!("   Recommended: audio_gain = {:.1}", recommended_gain);
+        } else {
+            log::error!("   Note: Current gain seems appropriate.");
+            log::error!("   Issue may be with microphone input level.");
+        }
+        
+        log::error!("");
+    } else {
+        log::info!("✅ Audio levels look good!");
+        log::info!("   Current gain ({:.1}) is appropriate.", current_gain);
+        log::info!("");
     }
+    
+    Ok(())
+}
 
-    log::info!("");
+fn load_audio_samples(path: &PathBuf) -> Result<Vec<f32>> {
+    let mut reader = hound::WavReader::open(path)?;
+    let samples: Vec<f32> = reader.samples::<i16>()
+        .map(|s| s.unwrap() as f32 / i16::MAX as f32)
+        .collect();
+    
+    // // Calculate statistics
+    // let rms = (samples.iter().map(|&s| s * s).sum::<f32>() / samples.len() as f32).sqrt();
+    // let max = samples.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+    // let min = samples.iter().cloned().fold(f32::INFINITY, f32::min);
+    
+    // let clipped_count = samples.iter()
+    //     .filter(|&&s| s.abs() > 0.99)
+    //     .count();
+    // let clipped_percent = (clipped_count as f32 / samples.len() as f32) * 100.0;
+    
+    // log::info!("=== AUDIO ANALYSIS ===");
+    // log::info!("Samples: {}", samples.len());
+    // log::info!("Duration: {:.1} seconds ({:.1} minutes)", 
+    //            samples.len() as f32 / 16000.0,
+    //            samples.len() as f32 / 16000.0 / 60.0);
+    // log::info!("");
+
+    // // Calculate distribution
+    // let loud_samples = samples.iter().filter(|&&s| s.abs() > 0.1).count();
+    // let very_loud_samples = samples.iter().filter(|&&s| s.abs() > 0.5).count();
+    // let quiet_samples = samples.iter().filter(|&&s| s.abs() < 0.01).count();
+
+    // let very_quiet_pct = quiet_samples as f32 / samples.len() as f32 * 100.0;
+    // let normal_pct = (samples.len() - loud_samples - quiet_samples) as f32 / samples.len() as f32 * 100.0;
+    // let loud_pct = loud_samples as f32 / samples.len() as f32 * 100.0;
+    // let very_loud_pct = very_loud_samples as f32 / samples.len() as f32 * 100.0;
+
+    // log::info!("Audio Levels:");
+    // log::info!("  Average (RMS): {:.4}", rms);
+    // log::info!("  Peak (max):    {:.4}", max);
+    // log::info!("  Minimum (min): {:.4}", min);
+    // log::info!("");
+
+    // log::info!("Distribution:");
+    // log::info!("  Very quiet (< 0.01): {:.1}%", very_quiet_pct);
+    // log::info!("  Normal (0.01-0.1):   {:.1}%", normal_pct);
+    // log::info!("  Loud (> 0.1):        {:.1}%", loud_pct);
+    // log::info!("  Very loud (> 0.5):   {:.1}%", very_loud_pct);
+    // log::info!("  Clipped (≈ 1.0):     {:.2}%", clipped_percent);
+    // log::info!("=====================");
+    // log::info!("");
+
+
+    // // Smart diagnostics with calculated recommendations
+    // if very_quiet_pct > 40.0 {
+    //     // Calculate recommended gain to achieve RMS ~0.08
+    //     let target_rms = 0.08;
+    //     let recommended_gain = (target_rms / rms * current_gain).min(20.0);
+        
+    //     log::error!("❌ PROBLEM: {:.0}% of audio is very quiet!", very_quiet_pct);
+    //     log::error!("   This will cause poor transcription quality.");
+    //     log::error!("");
+    //     log::error!("   SOLUTION: Increase audio_gain in config.toml");
+    //     log::error!("   Current: audio_gain = {:.1}", current_gain);
+    //     log::error!("   Recommended: audio_gain = {:.1}", recommended_gain);
+    //     log::error!("");
+    //     if clipped_percent < 1.0 {
+    //         log::error!("   Note: You have headroom - only {:.2}% clipping", clipped_percent);
+    //         log::error!("   It's OK to increase gain even if a few samples clip!");
+    //     }
+    // } else if rms < 0.05 {
+    //     let target_rms = 0.08;
+    //     let recommended_gain = (target_rms / rms * current_gain).min(20.0);
+        
+    //     log::warn!("⚠️  Audio is quieter than ideal (RMS = {:.4})", rms);
+    //     log::warn!("   Recommended RMS: 0.05 - 0.30 for best results");
+    //     log::warn!("   Current gain: {:.1}", current_gain);
+    //     log::warn!("   Suggested gain: {:.1}", recommended_gain);
+    // } else if rms > 0.5 {
+    //     let target_rms = 0.15;
+    //     let recommended_gain = (target_rms / rms * current_gain).max(0.5);
+        
+    //     log::warn!("⚠️  Audio is very loud (RMS = {:.4})", rms);
+    //     log::warn!("   Risk of distortion.");
+    //     log::warn!("   Current gain: {:.1}", current_gain);
+    //     log::warn!("   Suggested gain: {:.1}", recommended_gain);
+    // } else if clipped_percent > 5.0 {
+    //     let target_rms = 0.15;
+    //     let recommended_gain = (target_rms / rms * current_gain).max(0.5);
+        
+    //     log::error!("❌ SEVERE CLIPPING: {:.1}% of samples are clipped!", clipped_percent);
+    //     log::error!("   Audio is distorted. REDUCE audio_gain in config.toml");
+    //     log::error!("   Current: audio_gain = {:.1}", current_gain);
+    //     log::error!("   Recommended: audio_gain = {:.1}", recommended_gain);
+    // } else if clipped_percent > 1.0 {
+    //     log::warn!("⚠️  Moderate clipping: {:.2}% clipped", clipped_percent);
+    //     log::warn!("   Current gain: {:.1}", current_gain);
+    //     log::warn!("   Consider reducing to {:.1} for cleaner audio", current_gain * 0.8);
+    // } else {
+    //     log::info!("✅ AUDIO QUALITY: Good");
+    //     log::info!("   RMS level is in optimal range for transcription");
+    //     log::info!("   Current gain: {:.1}", current_gain);
+    // }
+
+    // log::info!("");
     
     Ok(samples)
 }
