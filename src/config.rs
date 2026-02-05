@@ -11,6 +11,36 @@ pub struct Config {
     pub vosk_model_path: String,
     pub whisper_model_path_accurate: String,
     pub enable_accurate_recognition: bool,
+    #[serde(default = "default_ollama_enabled")]
+    pub ollama_enabled: bool,
+    #[serde(default = "default_ollama_host")]
+    pub ollama_host: String,
+    #[serde(default = "default_ollama_model")]
+    pub ollama_model: String,
+    #[serde(default = "default_ollama_prompt")]
+    pub ollama_prompt: String,
+    #[serde(default = "default_summary_suffix")]
+    pub summary_suffix: String,
+}
+
+fn default_ollama_enabled() -> bool {
+    false
+}
+
+fn default_ollama_host() -> String {
+    "http://localhost:11434".to_string()
+}
+
+fn default_ollama_model() -> String {
+    "llama3.2".to_string()
+}
+
+fn default_ollama_prompt() -> String {
+    "Summarize the following transcript in concise bullet points.".to_string()
+}
+
+fn default_summary_suffix() -> String {
+    "_summary".to_string()
 }
 
 impl Config {
@@ -64,6 +94,15 @@ impl Config {
             fs::create_dir_all(&self.output_directory)
                 .context("Failed to create output directory")?;
             log::info!("Created output directory: {}", self.output_directory);
+        }
+
+        if self.ollama_enabled {
+            if self.ollama_model.trim().is_empty() {
+                anyhow::bail!("ollama_model must not be empty when ollama_enabled is true");
+            }
+            if self.ollama_host.trim().is_empty() {
+                anyhow::bail!("ollama_host must not be empty when ollama_enabled is true");
+            }
         }
         
         Ok(())

@@ -7,6 +7,7 @@ mod writer;
 mod recognition;
 mod text_writer;
 mod whisper;
+mod summary;
 
 use clap::{Parser, Subcommand};
 use anyhow::{Result, Context};
@@ -46,6 +47,15 @@ struct RecordingSession {
     stop_signal: Arc<AtomicBool>,
     text_tx: mpsc::Sender<recognition::RecognizedText>,
     wav_path_rx: mpsc::Receiver<PathBuf>,
+    wav_path: PathBuf,
+    realtime_txt_path: PathBuf,
+    base_name: String,
+}
+
+struct RecordingOutput {
+    wav_path: PathBuf,
+    realtime_txt_path: PathBuf,
+    base_name: String,
 }
 
 impl RecordingSession {
@@ -96,14 +106,21 @@ impl RecordingSession {
         };
         threads.push(resampler_handle);
 
+        // Build consistent output paths
+        let base_name = Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
+        let wav_path = writer::build_wav_path(&config.output_directory, &base_name);
+        let realtime_txt_path = PathBuf::from(&config.output_directory)
+            .join(format!("{}_real-time.txt", base_name));
+
         // Thread 3: WAV Writer
         let writer_handle = {
             let resampled_q = Arc::clone(&pipeline.resampled_queue_writer);
-            let cfg = Arc::clone(&config);
             let stop = Arc::clone(&stop_signal);
             let path_tx = wav_path_tx.clone();
+            let output_path = wav_path.clone();
+            let sample_rate = config.sample_rate;
             std::thread::spawn(move || {
-                match writer::writer_thread(resampled_q, cfg, stop) {
+                match writer::writer_thread(resampled_q, output_path, sample_rate, stop) {
                     Ok(path) => {
                         log::info!("\n💾 Recording saved: {}", path.display());
                         let _ = path_tx.send(path);
@@ -133,12 +150,7 @@ impl RecordingSession {
 
         // Thread 5: Text Writer
         let text_writer_handle = {
-            let timestamp = Local::now().format("%Y-%m-%d_%H-%M-%S");
-            let output_path = format!(
-                "{}/{}_real-time.txt",
-                config.output_directory,
-                timestamp
-            );
+            let output_path = realtime_txt_path.to_string_lossy().to_string();
             std::thread::spawn(move || {
                 match text_writer::text_writer_thread(text_rx, output_path) {
                     Ok(_) => {},
@@ -155,10 +167,13 @@ impl RecordingSession {
             stop_signal,
             text_tx,
             wav_path_rx,
+            wav_path,
+            realtime_txt_path,
+            base_name,
         })
     }
     
-    fn stop(self) -> Option<PathBuf> {
+    fn stop(self) -> Option<RecordingOutput> {
         log::info!("Stopping recording...");
         
         // Signal all threads to stop
@@ -176,10 +191,14 @@ impl RecordingSession {
         }
         
         // Try to receive the wav path (should be available after writer thread finishes)
-        let wav_path = self.wav_path_rx.try_recv().ok();
+        let wav_path = self.wav_path_rx.try_recv().ok().unwrap_or(self.wav_path);
         
         log::info!("Recording stopped");
-        wav_path
+        Some(RecordingOutput {
+            wav_path,
+            realtime_txt_path: self.realtime_txt_path,
+            base_name: self.base_name,
+        })
     }
 }
 
@@ -274,14 +293,15 @@ fn run_recording_mode(config: Arc<Config>) -> Result<()> {
                 if is_recording {
                     println!("\n⏹️  Stopping recording...");
                     if let Some(s) = session.take() {
-                        let wav_path = s.stop();
+                        let output = s.stop();
                         
                         // Optionally run Whisper for accurate transcription
                         if config.enable_accurate_recognition {
-                            if let Some(path) = wav_path {
+                            if let Some(output) = output.as_ref() {
+                                let path = &output.wav_path;
                                 println!("🔄 Running accurate transcription with Whisper...");
                                 match whisper::transcribe_with_whisper(
-                                    &path,
+                                    path,
                                     &config.whisper_model_path_accurate,
                                     &config.output_directory,
                                     &config,
@@ -291,6 +311,36 @@ fn run_recording_mode(config: Arc<Config>) -> Result<()> {
                                 }
                             } else {
                                 log::warn!("Could not get WAV file path for accurate transcription");
+                            }
+                        }
+
+                        if let Some(output) = output {
+                            if config.ollama_enabled {
+                                let accurate_txt_path = PathBuf::from(&config.output_directory)
+                                    .join(format!("{}_accurate.txt", output.base_name));
+
+                                let summary_input = if accurate_txt_path.exists() {
+                                    accurate_txt_path
+                                } else {
+                                    output.realtime_txt_path
+                                };
+
+                                let summary_output = summary::build_summary_path(
+                                    &config.output_directory,
+                                    &output.base_name,
+                                    &config.summary_suffix,
+                                );
+
+                                let cfg = Arc::clone(&config);
+                                std::thread::spawn(move || {
+                                    if let Err(e) = summary::generate_summary_from_file(
+                                        &cfg,
+                                        &summary_input,
+                                        &summary_output,
+                                    ) {
+                                        log::error!("Summary generation error: {}", e);
+                                    }
+                                });
                             }
                         }
                     }

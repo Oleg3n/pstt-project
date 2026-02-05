@@ -1,16 +1,13 @@
 use hound::{WavWriter, WavSpec};
-use chrono::Local;
 use std::path::PathBuf;
 use anyhow::Result;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use crate::buffers::BlockingQueue;
-use crate::config::Config;
 use std::time::Duration;
 
-pub fn generate_filename(output_dir: &str) -> PathBuf {
-    let timestamp = Local::now().format("%Y-%m-%d_%H-%M-%S");
-    let filename = format!("{}.wav", timestamp);
+pub fn build_wav_path(output_dir: &str, base_name: &str) -> PathBuf {
+    let filename = format!("{}.wav", base_name);
     PathBuf::from(output_dir).join(filename)
 }
 
@@ -32,15 +29,15 @@ pub fn create_wav_writer(
 
 pub fn writer_thread(
     resampled_queue: Arc<BlockingQueue<f32>>,
-    config: Arc<Config>,
+    output_path: PathBuf,
+    sample_rate: u32,
     stop_signal: Arc<AtomicBool>,
 ) -> Result<PathBuf> {
     log::info!("WAV writer thread started");
     
-    let filepath = generate_filename(&config.output_directory);
-    log::info!("Recording to: {}", filepath.display());
+    log::info!("Recording to: {}", output_path.display());
     
-    let mut writer = create_wav_writer(&filepath, config.sample_rate)?;
+    let mut writer = create_wav_writer(&output_path, sample_rate)?;
     
     while !stop_signal.load(Ordering::Relaxed) {
         // Use try_pop_batch with a timeout to check stop signal periodically
@@ -63,7 +60,7 @@ pub fn writer_thread(
     }
     
     writer.finalize()?;
-    log::info!("WAV writer thread finished: {}", filepath.display());
+    log::info!("WAV writer thread finished: {}", output_path.display());
     
-    Ok(filepath)
+    Ok(output_path)
 }
