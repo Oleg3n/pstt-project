@@ -39,6 +39,11 @@ enum Commands {
         /// Path to the WAV file (can be just filename if in output directory)
         wav_file: String,
     },
+    /// Generate summary from an existing transcript file
+    Summary {
+        /// Path to the transcript TXT file
+        txt_file: String,
+    },
 }
 
 struct RecordingSession {
@@ -383,6 +388,36 @@ fn run_accurate_mode(config: Arc<Config>, wav_file: String) -> Result<()> {
     Ok(())
 }
 
+fn run_summary_mode(config: Arc<Config>, txt_file: String) -> Result<()> {
+    println!("Generating summary for: {}", txt_file);
+
+    let txt_path = PathBuf::from(&txt_file);
+    if !txt_path.exists() {
+        anyhow::bail!("Transcript file not found: {}", txt_path.display());
+    }
+
+    let base_name = txt_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| anyhow::anyhow!("Invalid transcript filename"))?
+        .to_string();
+
+    let output_dir = txt_path
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from(&config.output_directory));
+
+    let summary_output = summary::build_summary_path(
+        output_dir.to_string_lossy().as_ref(),
+        &base_name,
+        &config.summary_suffix,
+    );
+
+    summary::generate_summary_from_file(&config, &txt_path, &summary_output)?;
+
+    Ok(())
+}
+
 fn main() -> Result<()> {
     // Initialize logger
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
@@ -394,6 +429,9 @@ fn main() -> Result<()> {
     match cli.command {
         Some(Commands::Accurate { wav_file }) => {
             run_accurate_mode(config, wav_file)?;
+        }
+        Some(Commands::Summary { txt_file }) => {
+            run_summary_mode(config, txt_file)?;
         }
         None => {
             run_recording_mode(config)?;

@@ -21,6 +21,8 @@ pub struct Config {
     pub ollama_prompt: String,
     #[serde(default = "default_summary_suffix")]
     pub summary_suffix: String,
+    #[serde(default = "default_ollama_timeout_secs")]
+    pub ollama_timeout_secs: u64,
 }
 
 fn default_ollama_enabled() -> bool {
@@ -41,6 +43,10 @@ fn default_ollama_prompt() -> String {
 
 fn default_summary_suffix() -> String {
     "_summary".to_string()
+}
+
+fn default_ollama_timeout_secs() -> u64 {
+    30
 }
 
 impl Config {
@@ -102,6 +108,9 @@ impl Config {
             }
             if self.ollama_host.trim().is_empty() {
                 anyhow::bail!("ollama_host must not be empty when ollama_enabled is true");
+            }
+            if self.ollama_timeout_secs == 0 {
+                anyhow::bail!("ollama_timeout_secs must be greater than 0");
             }
         }
         

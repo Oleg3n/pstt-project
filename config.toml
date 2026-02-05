@@ -35,7 +35,7 @@ enable_accurate_recognition = true
 ollama_enabled = false
 
 # Ollama server host (include scheme and port if needed)
-ollama_host = "http://localhost:11434"
+ollama_host = "http://diablo:11434"
 
 # Ollama model name
 ollama_model = "llama3.2"
@@ -45,4 +45,7 @@ ollama_prompt = "Summarize the following transcript in concise bullet points."
 
 # Suffix for summary file names (e.g. 2026-02-04_12-00-00_summary.txt)
 summary_suffix = "_summary"
+
+# Timeout for Ollama requests (seconds)
+ollama_timeout_secs = 60
 

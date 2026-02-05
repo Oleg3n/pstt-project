@@ -67,12 +67,25 @@ fn generate_summary(config: &Config, transcript: &str) -> Result<String> {
         stream: false,
     };
 
-    let client = reqwest::blocking::Client::new();
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(config.ollama_timeout_secs))
+        .build()
+        .context("Failed to build HTTP client for Ollama")?;
+
     let response = client
         .post(url)
         .json(&request)
         .send()
-        .context("Failed to send request to Ollama")?;
+        .map_err(|err| {
+            if err.is_timeout() {
+                anyhow::anyhow!(
+                    "Ollama request timed out after {}s. Check ollama_host or server load.",
+                    config.ollama_timeout_secs
+                )
+            } else {
+                anyhow::anyhow!("Failed to send request to Ollama: {}", err)
+            }
+        })?;
 
     if !response.status().is_success() {
         let status = response.status();
