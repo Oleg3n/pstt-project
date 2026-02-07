@@ -262,7 +262,7 @@ fn run_recording_mode(config: Arc<Config>) -> Result<()> {
     enable_raw_mode()?;
     
     // Clear any pending keyboard events (like the Enter from mic selection)
-    while crossterm::event::poll(std::time::Duration::from_millis(0))? {
+    while crossterm::event::poll(std::time::Duration::from_millis(100))? {
         crossterm::event::read()?;
     }
     
