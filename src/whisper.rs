@@ -45,6 +45,15 @@ pub fn transcribe_with_whisper(
         
         // params.set_language(Some("en"));
 
+        // Set up progress callback
+        params.set_progress_callback_safe(|progress: i32| {
+            // Progress is reported as percentage (0-100)
+            if progress % 5 == 0 || progress == 100 {
+                println!("📊 Transcription progress: {}%", progress);
+                log::info!("Transcription progress: {}%", progress);
+            }
+        });
+
         log::info!("Transcribing with Whisper...");
         let mut state = ctx.create_state()?;
         state.full(params, &samples)?;

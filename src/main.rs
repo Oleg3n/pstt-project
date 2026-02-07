@@ -260,10 +260,21 @@ fn run_recording_mode(config: Arc<Config>) -> Result<()> {
     }).expect("Error setting Ctrl+C handler");
     
     enable_raw_mode()?;
-    
+
+    // 1. Give the OS/Terminal a moment to register the mode change
+    // log::info!("sleeping... ");
+    std::thread::sleep(std::time::Duration::from_millis(250));
     // Clear any pending keyboard events (like the Enter from mic selection)
-    while crossterm::event::poll(std::time::Duration::from_millis(100))? {
-        crossterm::event::read()?;
+    // log::info!("clearing...");
+    while crossterm::event::poll(std::time::Duration::ZERO)? {
+        match crossterm::event::read()? {
+            crossterm::event::Event::Key(key_event) => {
+                log::info!("drain key = {:?}", key_event.code);
+            }
+            _ => {
+                log::info!("drain empty");
+            }
+        }
     }
     
     let mut session: Option<RecordingSession> = None;
@@ -272,6 +283,7 @@ fn run_recording_mode(config: Arc<Config>) -> Result<()> {
     loop {
         // Check if Ctrl+C was pressed
         // println!("DEBUG: LOOP running = {}", running.load(Ordering::Relaxed));
+        // log::info!("main loop running");
         if !running.load(Ordering::Relaxed) {
             // log::debug!("running = {}", running.load(Ordering::Relaxed));
             // println!("DEBUG: running = {}", running.load(Ordering::Relaxed));
