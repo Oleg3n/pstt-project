@@ -1,0 +1,11 @@
+# Cargo build configuration (not the app's config.toml)
+
+[build]
+# Short target dir avoids Windows MAX_PATH (260 chars) exceeded by the deeply
+# nested whisper-rs-sys ExternalProject CMake build paths.
+target-dir = "C:/pstt-target"
+
+[env]
+# Point whisper-rs-sys CMake to local Vulkan SDK files instead of a system install.
+# Required when features = ["vulkan"] is set in Cargo.toml.
+VULKAN_SDK = { value = "libs/build/vulkan-sdk", relative = true, force = true }

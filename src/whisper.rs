@@ -33,9 +33,11 @@ pub fn transcribe_with_whisper(
         analyze_audio_and_recommend_gain(&samples, current_gain)?;
         
         // Set up parameters
-        // Use all available CPU threads — whisper defaults to 1, which is very slow
+        // whisper.cpp processes one 30-second chunk at a time using n_threads for
+        // both the encoder and decoder. Use all physical cores — timing is linear
+        // so there is no cache-thrashing penalty at high thread counts here.
         let n_threads = std::thread::available_parallelism()
-            .map(|n| n.get() as i32)
+            .map(|n| (n.get() as i32).min(8))
             .unwrap_or(4);
         log::info!("Whisper using {} threads", n_threads);
 
