@@ -94,7 +94,7 @@ impl AudioResampler {
 pub fn resampler_thread(
     raw_queue: Arc<BlockingQueue<f32>>,
     resampled_queue_writer: Arc<BlockingQueue<f32>>,
-    resampled_queue_vosk: Arc<BlockingQueue<f32>>,
+    resampled_queue_realtime: Arc<BlockingQueue<f32>>,
     config: Arc<Config>,
     stop_signal: Arc<AtomicBool>,
 ) {
@@ -143,8 +143,8 @@ pub fn resampler_thread(
                         if !resampled_queue_writer.push(resampled) {
                             log::warn!("Resampler: Failed to push to resampled writer queue");
                         }
-                        if !resampled_queue_vosk.push(resampled_clone) {
-                            log::warn!("Resampler: Failed to push to resampled Vosk queue");
+                        if !resampled_queue_realtime.push(resampled_clone) {
+                            log::warn!("Resampler: Failed to push to resampled realtime queue");
                         }
                     }
                 }
@@ -181,8 +181,8 @@ pub fn resampler_thread(
                     if !resampled_queue_writer.push(resampled) {
                         log::warn!("Resampler: Failed to push to resampled writer queue");
                     }
-                    if !resampled_queue_vosk.push(resampled_clone) {
-                        log::warn!("Resampler: Failed to push to resampled Vosk queue");
+                    if !resampled_queue_realtime.push(resampled_clone) {
+                        log::warn!("Resampler: Failed to push to resampled realtime queue");
                     }
                 }
             }
@@ -201,8 +201,8 @@ pub fn resampler_thread(
                 if !resampled_queue_writer.push(resampled) {
                     log::warn!("Resampler: Failed to push final samples to writer queue");
                 }
-                if !resampled_queue_vosk.push(resampled_clone) {
-                    log::warn!("Resampler: Failed to push final samples to Vosk queue");
+                if !resampled_queue_realtime.push(resampled_clone) {
+                    log::warn!("Resampler: Failed to push final samples to realtime queue");
                 }
             }
         }

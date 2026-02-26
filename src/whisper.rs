@@ -33,30 +33,36 @@ pub fn transcribe_with_whisper(
         analyze_audio_and_recommend_gain(&samples, current_gain)?;
         
         // Set up parameters
+        // Use all available CPU threads — whisper defaults to 1, which is very slow
+        let n_threads = std::thread::available_parallelism()
+            .map(|n| n.get() as i32)
+            .unwrap_or(4);
+        log::info!("Whisper using {} threads", n_threads);
+
         let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
-        params.set_print_progress(true);
+        params.set_n_threads(n_threads);
+        params.set_print_progress(false);
         params.set_print_special(false);
         params.set_print_realtime(false);
         params.set_print_timestamps(false);
-        params.set_print_special(false);
         params.set_suppress_blank(true);
         params.set_suppress_nst(true);
         params.set_debug_mode(false);
-        
+
         // params.set_language(Some("en"));
 
-        // Set up progress callback
+        // Progress via log only (not println — terminal may be in raw mode)
         params.set_progress_callback_safe(|progress: i32| {
-            // Progress is reported as percentage (0-100)
-            if progress % 5 == 0 || progress == 100 {
-                println!("📊 Transcription progress: {}%", progress);
-                log::info!("Transcription progress: {}%", progress);
+            if progress % 10 == 0 || progress == 100 {
+                log::info!("Whisper transcription progress: {}%", progress);
             }
         });
 
         log::info!("Transcribing with Whisper...");
+        let _t0 = std::time::Instant::now();
         let mut state = ctx.create_state()?;
         state.full(params, &samples)?;
+        log::info!("Whisper inference took {:.1}s", _t0.elapsed().as_secs_f32());
         
         let num_segments = state.full_n_segments();
         let mut full_text = String::new();

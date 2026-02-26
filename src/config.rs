@@ -11,6 +11,20 @@ pub struct Config {
     pub vosk_model_path: String,
     pub whisper_model_path_accurate: String,
     pub enable_accurate_recognition: bool,
+    /// Which real-time recognition engine to use: "vosk" or "sherpa-onnx"
+    #[serde(default = "default_realtime_engine")]
+    pub realtime_engine: String,
+    /// Paths to the four sherpa-onnx streaming Zipformer model files.
+    /// Model archives from GitHub contain versioned filenames like
+    /// `encoder-epoch-99-avg-1-chunk-16-left-128.onnx` — set each path explicitly.
+    #[serde(default = "default_sherpa_encoder")]
+    pub sherpa_encoder: String,
+    #[serde(default = "default_sherpa_decoder")]
+    pub sherpa_decoder: String,
+    #[serde(default = "default_sherpa_joiner")]
+    pub sherpa_joiner: String,
+    #[serde(default = "default_sherpa_tokens")]
+    pub sherpa_tokens: String,
     #[serde(default = "default_ollama_enabled")]
     pub ollama_enabled: bool,
     #[serde(default = "default_ollama_host")]
@@ -24,6 +38,15 @@ pub struct Config {
     #[serde(default = "default_ollama_timeout_secs")]
     pub ollama_timeout_secs: u64,
 }
+
+fn default_realtime_engine() -> String {
+    "vosk".to_string()
+}
+
+fn default_sherpa_encoder() -> String { String::new() }
+fn default_sherpa_decoder() -> String { String::new() }
+fn default_sherpa_joiner() -> String { String::new() }
+fn default_sherpa_tokens() -> String { String::new() }
 
 fn default_ollama_enabled() -> bool {
     false
@@ -83,10 +106,41 @@ impl Config {
             anyhow::bail!("audio_gain must be between 0.0 and 10.0 (recommended: 1.0-5.0)");
         }
         
-        // Check if Vosk model path exists
-        if !Path::new(&self.vosk_model_path).exists() {
-            log::warn!("Vosk model path does not exist: {}", self.vosk_model_path);
-            log::warn!("Please download a model from https://alphacephei.com/vosk/models");
+        // Validate realtime_engine selection
+        match self.realtime_engine.as_str() {
+            "vosk" => {
+                if !Path::new(&self.vosk_model_path).exists() {
+                    log::warn!("Vosk model path does not exist: {}", self.vosk_model_path);
+                    log::warn!("Please download a model from https://alphacephei.com/vosk/models");
+                }
+            }
+            "sherpa-onnx" => {
+                for (name, path) in &[
+                    ("sherpa_encoder", &self.sherpa_encoder),
+                    ("sherpa_decoder", &self.sherpa_decoder),
+                    ("sherpa_joiner",  &self.sherpa_joiner),
+                    ("sherpa_tokens",  &self.sherpa_tokens),
+                ] {
+                    if path.is_empty() {
+                        anyhow::bail!(
+                            "`{}` must be set when realtime_engine = \"sherpa-onnx\"",
+                            name
+                        );
+                    }
+                    if !Path::new(path.as_str()).exists() {
+                        anyhow::bail!(
+                            "`{}` file not found: {}",
+                            name, path
+                        );
+                    }
+                }
+            }
+            other => {
+                anyhow::bail!(
+                    "Unknown realtime_engine: \"{}\". Valid values: \"vosk\", \"sherpa-onnx\"",
+                    other
+                );
+            }
         }
         
         // Check if accurate Whisper model path exists (only if accurate recognition is enabled)

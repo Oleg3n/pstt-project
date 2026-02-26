@@ -8,12 +8,85 @@ use crate::config::Config;
 use chrono::Local;
 use std::time::Duration;
 
+// ── Shared text type ──────────────────────────────────────────────────────────
+
 #[derive(Debug, Clone)]
 pub struct RecognizedText {
     pub text: String,
     pub timestamp: chrono::DateTime<chrono::Local>,
     pub is_final: bool,
 }
+
+// ── Engine abstraction ────────────────────────────────────────────────────────
+
+/// Common interface for every streaming real-time recognition engine.
+///
+/// To add a new engine:
+///   1. Create a `struct MyEngineRecognizer { ... }` that stores a cloned
+///      `mpsc::Sender<RecognizedText>` and whatever native state is needed.
+///   2. Implement this trait.
+///   3. Add a match arm in `create_realtime_recognizer`.
+pub trait RealtimeRecognizer {
+    /// Feed a batch of 16-kHz mono f32 PCM samples and optionally emit
+    /// `RecognizedText` messages via the internal sender.
+    fn process_audio(&mut self, samples: &[f32]) -> Result<()>;
+
+    /// Flush any buffered state and emit the last `RecognizedText` with
+    /// `is_final: true`.  Called once when recording stops.
+    fn finalize(&mut self) -> Result<()>;
+}
+
+// ── Factory ───────────────────────────────────────────────────────────────────
+
+/// Create the engine selected by `config.realtime_engine`.
+///
+/// Returns an error if:
+/// - the engine name is unknown, or
+/// - the required Cargo feature was not compiled in (sherpa-onnx), or
+/// - the model files cannot be opened.
+pub fn create_realtime_recognizer(
+    config: &Config,
+    text_sender: mpsc::Sender<RecognizedText>,
+) -> Result<Box<dyn RealtimeRecognizer>> {
+    match config.realtime_engine.as_str() {
+        "vosk" => {
+            log::info!("Real-time engine: Vosk");
+            Ok(Box::new(VoskRecognizer::new(
+                &config.vosk_model_path,
+                config.sample_rate as f32,
+                text_sender,
+            )?))
+        }
+        "sherpa-onnx" => {
+            #[cfg(feature = "sherpa-engine")]
+            {
+                log::info!("Real-time engine: sherpa-onnx");
+                Ok(Box::new(crate::sherpa::SherpaOnnxRecognizer::new(
+                    &config.sherpa_encoder,
+                    &config.sherpa_decoder,
+                    &config.sherpa_joiner,
+                    &config.sherpa_tokens,
+                    config.sample_rate,
+                    text_sender,
+                )?))
+            }
+            #[cfg(not(feature = "sherpa-engine"))]
+            {
+                anyhow::bail!(
+                    "realtime_engine is set to \"sherpa-onnx\" but the binary was compiled \
+                     without the `sherpa-engine` feature.\n\
+                     Rebuild with:  cargo build --features sherpa-engine"
+                );
+            }
+        }
+        other => anyhow::bail!(
+            "Unknown realtime_engine: \"{}\". Valid values: \"vosk\", \"sherpa-onnx\"",
+            other
+        ),
+    }
+}
+
+// ── Vosk engine ───────────────────────────────────────────────────────────────
 
 pub struct VoskRecognizer {
     recognizer: Recognizer,
@@ -22,48 +95,41 @@ pub struct VoskRecognizer {
 
 impl VoskRecognizer {
     pub fn new(
-        model_path: &str, 
+        model_path: &str,
         sample_rate: f32,
         text_sender: mpsc::Sender<RecognizedText>,
     ) -> Result<Self> {
         log::info!("Loading Vosk model from: {}", model_path);
-        let model = Model::new(model_path).ok_or_else(|| anyhow::anyhow!("Failed to load Vosk model"))?;
-        
-        // Create recognizer with f32 sample rate
-        let mut recognizer = Recognizer::new(&model, sample_rate).ok_or_else(|| anyhow::anyhow!("Failed to create Vosk recognizer"))?;
-        
-        // Configure recognizer for better results
+        let model = Model::new(model_path)
+            .ok_or_else(|| anyhow::anyhow!("Failed to load Vosk model from: {}", model_path))?;
+
+        let mut recognizer = Recognizer::new(&model, sample_rate)
+            .ok_or_else(|| anyhow::anyhow!("Failed to create Vosk recognizer"))?;
+
         recognizer.set_words(true);
         recognizer.set_partial_words(true);
-        
+
         log::info!("Vosk model loaded successfully (sample_rate: {} Hz)", sample_rate);
-        
-        Ok(Self {
-            recognizer,
-            text_sender,
-        })
+
+        Ok(Self { recognizer, text_sender })
     }
-    
-    pub fn process_audio(&mut self, samples: &[f32]) -> Result<()> {
+}
+
+impl RealtimeRecognizer for VoskRecognizer {
+    fn process_audio(&mut self, samples: &[f32]) -> Result<()> {
         if samples.is_empty() {
             return Ok(());
         }
-        
-        // Convert f32 to i16 (Vosk expects i16 samples)
+
+        // Vosk expects i16 samples
         let samples_i16: Vec<i16> = samples.iter()
             .map(|&s| (s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16)
             .collect();
-        
-        // Feed samples to recognizer - returns Result<DecodingState, AcceptWaveformError>
+
         match self.recognizer.accept_waveform(&samples_i16) {
             Ok(state) => {
-                // Check if we have a finalized result
                 if state == vosk::DecodingState::Finalized {
-                    // Get complete result
-                    let result = self.recognizer.result();
-                    
-                    // Try to get single result (most common case)
-                    if let Some(single) = result.single() {
+                    if let Some(single) = self.recognizer.result().single() {
                         let text = single.text;
                         if !text.is_empty() {
                             println!("🎤 Recognized: {}", text);
@@ -75,29 +141,21 @@ impl VoskRecognizer {
                         }
                     }
                 } else {
-                    // Get partial result for real-time feedback
                     let partial = self.recognizer.partial_result();
                     let text = partial.partial;
-                    
                     if !text.is_empty() && text.split_whitespace().count() >= 3 {
                         log::debug!("Partial: {}", text);
                     }
                 }
             }
-            Err(e) => {
-                log::warn!("Accept waveform error: {:?}", e);
-            }
+            Err(e) => log::warn!("Accept waveform error: {:?}", e),
         }
-        
+
         Ok(())
     }
-    
-    pub fn finalize(&mut self) -> Result<()> {
-        // Get final result
-        let result = self.recognizer.final_result();
-        
-        // Try to get single result
-        if let Some(single) = result.single() {
+
+    fn finalize(&mut self) -> Result<()> {
+        if let Some(single) = self.recognizer.final_result().single() {
             let text = single.text;
             if !text.is_empty() {
                 println!("🎤 Final: {}", text);
@@ -108,25 +166,22 @@ impl VoskRecognizer {
                 });
             }
         }
-        
         Ok(())
     }
 }
 
-pub fn vosk_thread(
+// ── Thread entry point ────────────────────────────────────────────────────────
+
+pub fn realtime_recognition_thread(
     resampled_queue: Arc<BlockingQueue<f32>>,
     text_sender: mpsc::Sender<RecognizedText>,
     config: Arc<Config>,
     stop_signal: Arc<AtomicBool>,
 ) -> Result<()> {
-    log::info!("Vosk recognition thread started");
-    
-    let mut recognizer = VoskRecognizer::new(
-        &config.vosk_model_path,
-        config.sample_rate as f32,
-        text_sender,
-    )?;
-    
+    log::info!("Real-time recognition thread started (engine: {})", config.realtime_engine);
+
+    let mut recognizer = create_realtime_recognizer(&config, text_sender)?;
+
     while !stop_signal.load(Ordering::Relaxed) {
         if let Some(samples) = resampled_queue.try_pop_batch(4096) {
             recognizer.process_audio(&samples)?;
@@ -134,14 +189,14 @@ pub fn vosk_thread(
             std::thread::sleep(Duration::from_millis(50));
         }
     }
-    
-    // Process any remaining samples
+
+    // Drain any remaining buffered samples
     while let Some(samples) = resampled_queue.try_pop_batch(4096) {
         recognizer.process_audio(&samples)?;
     }
-    
+
     recognizer.finalize()?;
-    log::info!("Vosk recognition thread finished");
-    
+    log::info!("Real-time recognition thread finished");
+
     Ok(())
 }

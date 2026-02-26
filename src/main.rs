@@ -8,6 +8,8 @@ mod recognition;
 mod text_writer;
 mod whisper;
 mod summary;
+#[cfg(feature = "sherpa-engine")]
+mod sherpa;
 
 use clap::{Parser, Subcommand};
 use anyhow::{Result, Context};
@@ -101,11 +103,11 @@ impl RecordingSession {
         let resampler_handle = {
             let raw_q = Arc::clone(&pipeline.raw_queue);
             let resampled_q_writer = Arc::clone(&pipeline.resampled_queue_writer);
-            let resampled_q_vosk = Arc::clone(&pipeline.resampled_queue_vosk);
+            let resampled_q_realtime = Arc::clone(&pipeline.resampled_queue_realtime);
             let cfg = Arc::clone(&config);
             let stop = Arc::clone(&stop_signal);
             std::thread::spawn(move || {
-                resampler::resampler_thread(raw_q, resampled_q_writer, resampled_q_vosk, cfg, stop);
+                resampler::resampler_thread(raw_q, resampled_q_writer, resampled_q_realtime, cfg, stop);
                 log::info!("Resampler thread exiting");
             })
         };
@@ -137,21 +139,21 @@ impl RecordingSession {
         };
         threads.push(writer_handle);
 
-        // Thread 4: Vosk Real-Time Recognition
-        let vosk_handle = {
-            let resampled_q = Arc::clone(&pipeline.resampled_queue_vosk);
+        // Thread 4: Real-Time Recognition
+        let recognition_handle = {
+            let resampled_q = Arc::clone(&pipeline.resampled_queue_realtime);
             let cfg = Arc::clone(&config);
             let stop = Arc::clone(&stop_signal);
             let tx = text_tx.clone();
             std::thread::spawn(move || {
-                match recognition::vosk_thread(resampled_q, tx, cfg, stop) {
-                    Ok(_) => log::info!("Vosk recognition completed"),
-                    Err(e) => log::error!("Vosk thread error: {}", e),
+                match recognition::realtime_recognition_thread(resampled_q, tx, cfg, stop) {
+                    Ok(_) => log::info!("Real-time recognition completed"),
+                    Err(e) => log::error!("Real-time recognition thread error: {}", e),
                 }
-                log::info!("Vosk recognition thread exiting");
+                log::info!("Real-time recognition thread exiting");
             })
         };
-        threads.push(vosk_handle);
+        threads.push(recognition_handle);
 
         // Thread 5: Text Writer
         let text_writer_handle = {
@@ -208,6 +210,15 @@ impl RecordingSession {
 }
 
 fn run_recording_mode(config: Arc<Config>) -> Result<()> {
+    // Always reset terminal state in case a previous run crashed while in raw mode
+    let _ = disable_raw_mode();
+
+    // Restore terminal on panic so the shell is never left in raw mode
+    std::panic::set_hook(Box::new(|info| {
+        let _ = disable_raw_mode();
+        eprintln!("\r\n💥 panic: {}", info);
+    }));
+
     println!("╔══════════════════════════════════════════════════════════════╗");
     println!("║         Private Speech-to-Text (PSTT) v0.1.0                 ║");
     println!("╚══════════════════════════════════════════════════════════════╝");
@@ -256,6 +267,8 @@ fn run_recording_mode(config: Arc<Config>) -> Result<()> {
     let r = running.clone();
     
     ctrlc::set_handler(move || {
+        // Restore terminal immediately so the shell is usable after Ctrl+C
+        let _ = disable_raw_mode();
         r.store(false, Ordering::Relaxed);
     }).expect("Error setting Ctrl+C handler");
     
@@ -312,20 +325,23 @@ fn run_recording_mode(config: Arc<Config>) -> Result<()> {
                     if let Some(s) = session.take() {
                         let output = s.stop();
                         
-                        // Optionally run Whisper for accurate transcription
+                        // Optionally run Whisper for accurate transcription (background thread)
                         if config.enable_accurate_recognition {
-                            if let Some(output) = output.as_ref() {
-                                let path = &output.wav_path;
-                                println!("🔄 Running accurate transcription with Whisper...");
-                                match whisper::transcribe_with_whisper(
-                                    path,
-                                    &config.whisper_model_path_accurate,
-                                    &config.output_directory,
-                                    &config,
-                                ) {
-                                    Ok(_) => println!("✅ Accurate transcription completed"),
-                                    Err(e) => log::error!("Accurate transcription error: {}", e),
-                                }
+                            if let Some(output_ref) = output.as_ref() {
+                                let wav_path = output_ref.wav_path.clone();
+                                let cfg = Arc::clone(&config);
+                                println!("🔄 Starting accurate transcription with Whisper (background)...");
+                                std::thread::spawn(move || {
+                                    match whisper::transcribe_with_whisper(
+                                        &wav_path,
+                                        &cfg.whisper_model_path_accurate,
+                                        &cfg.output_directory,
+                                        &cfg,
+                                    ) {
+                                        Ok(_) => println!("✅ Accurate transcription completed"),
+                                        Err(e) => log::error!("Accurate transcription error: {}", e),
+                                    }
+                                });
                             } else {
                                 log::warn!("Could not get WAV file path for accurate transcription");
                             }
@@ -434,7 +450,16 @@ fn main() -> Result<()> {
     // Initialize logger
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .init();
-    
+
+    // Warn if running a debug build — neural-net inference is 10–50× slower without --release
+    #[cfg(debug_assertions)]
+    {
+        println!("⚠️  WARNING: This is a DEBUG build. Neural network inference (sherpa-onnx/Whisper)");
+        println!("   will be significantly slower than normal. For real-time performance run:");
+        println!("   cargo run --release");
+        println!();
+    }
+
     let cli = Cli::parse();
     let config = Arc::new(Config::load()?);
     

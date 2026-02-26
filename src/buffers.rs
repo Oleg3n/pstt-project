@@ -45,7 +45,7 @@ impl<T> BlockingQueue<T> {
 pub struct AudioPipeline {
     pub raw_queue: Arc<BlockingQueue<f32>>,
     pub resampled_queue_writer: Arc<BlockingQueue<f32>>,
-    pub resampled_queue_vosk: Arc<BlockingQueue<f32>>,
+    pub resampled_queue_realtime: Arc<BlockingQueue<f32>>,
 }
 
 impl AudioPipeline {
@@ -53,7 +53,7 @@ impl AudioPipeline {
         Self {
             raw_queue: BlockingQueue::new(buffer_size),
             resampled_queue_writer: BlockingQueue::new(buffer_size),
-            resampled_queue_vosk: BlockingQueue::new(buffer_size),
+            resampled_queue_realtime: BlockingQueue::new(buffer_size),
         }
     }
 }
