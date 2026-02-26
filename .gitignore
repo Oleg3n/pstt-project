@@ -21,6 +21,7 @@ Thumbs.db
 /models/
 *.wav
 *.txt
+/package-root
 
 # Keep example config but ignore local config variations
 # config.toml is tracked, but you can create config.local.toml
@@ -28,3 +29,4 @@ config.local.toml
 
 # Logs
 *.log
+package-out/private-speech-to-text.msix
