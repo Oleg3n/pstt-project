@@ -51,8 +51,13 @@ pub fn create_realtime_recognizer(
     match config.realtime_engine.as_str() {
         "vosk" => {
             log::info!("Real-time engine: Vosk");
+            let path = config.vosk_model_path.as_ref().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "vosk_model_path must be set when realtime_engine is \"vosk\""
+                )
+            })?;
             Ok(Box::new(VoskRecognizer::new(
-                &config.vosk_model_path,
+                path,
                 config.sample_rate as f32,
                 text_sender,
             )?))

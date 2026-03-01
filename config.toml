@@ -13,7 +13,14 @@ audio_gain = 8
 output_directory = "./recordings"
 
 # Real-time recognition engine selection
-# "sherpa-onnx" - sherpa-onnx engine (requires --features sherpa-engine at build time)
+# "vosk"        - legacy Vosk engine (fast, requires a Vosk model)
+# "sherpa-onnx" - Sherpa ONNX engine (higher quality, requires
+#                  --features sherpa-engine and four model files)
+# The shipped example config defaults to "sherpa-onnx".  If you
+# omit this field entirely when loading config, the code will fall
+# back to "vosk" (so a minimal config works without requiring
+# sherpa).  When using "sherpa-onnx" you can omit `vosk_model_path`;
+# the field is only required for the Vosk engine.
 realtime_engine = "sherpa-onnx"
 
 # Path to sherpa-onnx streaming Zipformer model files (used when realtime_engine = "sherpa-onnx")

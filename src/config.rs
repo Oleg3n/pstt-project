@@ -8,7 +8,8 @@ pub struct Config {
     pub sample_rate: u32,
     pub audio_gain: f32,
     pub output_directory: String,
-    pub vosk_model_path: String,
+    #[serde(default)]
+    pub vosk_model_path: Option<String>,
     pub whisper_model_path_accurate: String,
     pub enable_accurate_recognition: bool,
     /// Which real-time recognition engine to use: "vosk" or "sherpa-onnx"
@@ -109,8 +110,17 @@ impl Config {
         // Validate realtime_engine selection
         match self.realtime_engine.as_str() {
             "vosk" => {
-                if !Path::new(&self.vosk_model_path).exists() {
-                    log::warn!("Vosk model path does not exist: {}", self.vosk_model_path);
+                // Path is required when using the vosk engine
+                let path = self.vosk_model_path.as_ref().ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "vosk_model_path must be set when realtime_engine = \"vosk\""
+                    )
+                })?;
+                if path.trim().is_empty() {
+                    anyhow::bail!("vosk_model_path must not be empty when realtime_engine = \"vosk\"");
+                }
+                if !Path::new(path).exists() {
+                    log::warn!("Vosk model path does not exist: {}", path);
                     log::warn!("Please download a model from https://alphacephei.com/vosk/models");
                 }
             }
@@ -169,5 +179,69 @@ impl Config {
         }
         
         Ok(())
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Unit tests
+// -----------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use toml;
+
+    fn parse_toml(s: &str) -> Result<Config, toml::de::Error> {
+        toml::from_str(s)
+    }
+
+    #[test]
+    fn sherpa_engine_without_vosk_path_is_ok() {
+        let toml = r#"
+            sample_rate = 16000
+            audio_gain = 1.0
+            output_directory = "./recordings"
+            realtime_engine = "sherpa-onnx"
+            whisper_model_path_accurate = "./models/ggml-small.en.bin"
+            enable_accurate_recognition = false
+        "#;
+        let cfg: Config = parse_toml(toml).expect("parsing failed");
+        assert!(cfg.vosk_model_path.is_none());
+        // validation may still fail because sherpa paths are missing, but it
+        // should not complain about vosk_model_path.
+        let err = cfg.validate().unwrap_err();
+        let msg = err.to_string();
+        assert!(!msg.contains("vosk_model_path"), "unexpected vosk error: {}", msg);
+    }
+
+    #[test]
+    fn vosk_engine_requires_vosk_path() {
+        let toml = r#"
+            sample_rate = 16000
+            audio_gain = 1.0
+            output_directory = "./recordings"
+            realtime_engine = "vosk"
+            whisper_model_path_accurate = "./models/ggml-small.en.bin"
+            enable_accurate_recognition = false
+        "#;
+        let cfg: Config = parse_toml(toml).expect("parsing failed");
+        let err = cfg.validate().unwrap_err();
+        assert!(err.to_string().contains("vosk_model_path must be set"));
+    }
+
+    #[test]
+    fn vosk_engine_empty_path_errors() {
+        let toml = r#"
+            sample_rate = 16000
+            audio_gain = 1.0
+            output_directory = "./recordings"
+            realtime_engine = "vosk"
+            vosk_model_path = ""
+            whisper_model_path_accurate = "./models/ggml-small.en.bin"
+            enable_accurate_recognition = false
+        "#;
+        let cfg: Config = parse_toml(toml).expect("parsing failed");
+        let err = cfg.validate().unwrap_err();
+        assert!(err.to_string().contains("must not be empty"));
     }
 }

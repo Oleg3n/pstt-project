@@ -133,6 +133,20 @@ audio_gain = 3.0
 # Directory where recordings will be saved
 output_directory = "./recordings"
 
+# Real-time recognition engine: "vosk" or "sherpa-onnx"
+# - "vosk" is the legacy engine and requires a Vosk model
+#   (see below for vosk_model_path).
+# - "sherpa-onnx" offers better quality but requires
+#   building with --features sherpa-engine and downloading
+#   the four ONNX model files.
+# The example config below uses "sherpa-onnx"; if you omit
+# this field entirely the code falls back to "vosk" by default.
+realtime_engine = "sherpa-onnx"
+
+# Path to Vosk model directory (required only when
+# realtime_engine = "vosk"; can be omitted otherwise)
+vosk_model_path = "./models/vosk-model-small-en-us-0.15"
+
 # Path to Whisper model file for REAL-TIME recognition
 # Use a faster, smaller model (Tiny or Base recommended)
 whisper_model_path_realtime = "./models/ggml-base.en.bin"
@@ -150,7 +164,6 @@ chunk_duration_secs = 3
 # Set to false if you only want real-time transcription
 enable_accurate_recognition = true
 ```
-
 ## Usage
 
 ### Interactive Mode

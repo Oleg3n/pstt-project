@@ -219,8 +219,9 @@ fn run_recording_mode(config: Arc<Config>) -> Result<()> {
         eprintln!("\r\n💥 panic: {}", info);
     }));
 
+    let version = env!("CARGO_PKG_VERSION");
     println!("╔══════════════════════════════════════════════════════════════╗");
-    println!("║         Private Speech-to-Text (PSTT) v0.1.0                 ║");
+    println!("║         Private Speech-to-Text (PSTT) v{}                 ║", version);
     println!("╚══════════════════════════════════════════════════════════════╝");
     println!();
     
