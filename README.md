@@ -180,7 +180,9 @@ cargo run --release
 >
 > The program keeps the semver version from `Cargo.toml` and a separate
 > build counter that is incremented automatically on every build. The two
-> values are displayed independently in the startup banner, e.g.:
+> values are displayed independently in the startup banner.  The box width
+> automatically expands so the right-hand border stays aligned no matter
+> how long the version string or build number becomes:
 >
 > ```text
 > ╔══════════════════════════════════════════════════════════════╗

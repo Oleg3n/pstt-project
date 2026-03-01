@@ -214,6 +214,32 @@ impl RecordingSession {
     }
 }
 
+/// Generate the banner lines for a given version/build pair.
+///
+/// The returned vector contains the top border, two content lines, and
+/// the bottom border.  The width is computed from the longer of the two
+/// content strings so the right-hand `║` always lines up.
+fn banner_lines(version: &str, build: &str) -> Vec<String> {
+    let title = format!("Private Speech-to-Text (PSTT) v{}", version);
+    let build_line = format!("Build: {}", build);
+    let content_width = title.len().max(build_line.len());
+
+    let border = "═".repeat(content_width + 2); // one space of padding each side
+    let mut v = Vec::new();
+    v.push(format!("╔{}╗", border));
+    v.push(format!("║ {}{} ║", title, " ".repeat(content_width - title.len())));
+    v.push(format!("║ {}{} ║", build_line, " ".repeat(content_width - build_line.len())));
+    v.push(format!("╚{}╝", border));
+    v
+}
+
+/// Print the banner to stdout (simple wrapper around `banner_lines`).
+fn print_banner(version: &str, build: &str) {
+    for line in banner_lines(version, build) {
+        println!("{}", line);
+    }
+}
+
 fn run_recording_mode(config: Arc<Config>) -> Result<()> {
     // Always reset terminal state in case a previous run crashed while in raw mode
     let _ = disable_raw_mode();
@@ -226,10 +252,7 @@ fn run_recording_mode(config: Arc<Config>) -> Result<()> {
 
     let version = env!("CARGO_PKG_VERSION");
     let build_num = env!("BUILD_NUMBER");
-    println!("╔══════════════════════════════════════════════════════════════╗");
-    println!("║         Private Speech-to-Text (PSTT) v{}                 ║", version);
-    println!("║         Build: {}                                       ║", build_num);
-    println!("╚══════════════════════════════════════════════════════════════╝");
+    print_banner(version, build_num);
     println!();
     
     // List available microphones
@@ -494,9 +517,50 @@ fn main() -> Result<()> {
 // compile-time sanity check for build number
 #[cfg(test)]
 mod tests {
+    use super::{banner_lines};
+
     #[test]
     fn build_number_is_numeric() {
         let build: u64 = env!("BUILD_NUMBER").parse().expect("BUILD_NUMBER must be an integer");
         assert!(build > 0, "build number should be positive");
+    }
+
+    #[test]
+    fn banner_width_adapts() {
+        // helper to calculate expected total width (chars) including borders/spaces
+        let expected_width = |version: &str, build: &str| {
+            let title = format!("Private Speech-to-Text (PSTT) v{}", version);
+            let build_line = format!("Build: {}", build);
+            let content_width = title.len().max(build_line.len());
+            content_width + 4 // two padding spaces + two border chars
+        };
+
+        // normal case
+        let version = "1.0.0";
+        let build = "42";
+        let lines = banner_lines(version, build);
+        assert_eq!(lines.len(), 4);
+        let exp = expected_width(version, build);
+        for l in &lines {
+            assert_eq!(l.chars().count(), exp, "line mismatch: {}", l);
+        }
+
+        // version longer increases width
+        let long_ver = "123.456.789-alpha";
+        let short_build = "5";
+        let lines2 = banner_lines(long_ver, short_build);
+        let exp2 = expected_width(long_ver, short_build);
+        assert_eq!(lines2[0].chars().count(), exp2);
+        assert!(exp2 > exp);
+        assert!(lines2[1].contains(long_ver));
+        assert!(lines2[2].contains(short_build));
+
+        // build longer may or may not change width depending on title
+        let version3 = "0.1";
+        let long_build = "123456";
+        let lines3 = banner_lines(version3, long_build);
+        let exp3 = expected_width(version3, long_build);
+        assert_eq!(lines3[0].chars().count(), exp3);
+        assert!(lines3[2].contains(long_build));
     }
 }
