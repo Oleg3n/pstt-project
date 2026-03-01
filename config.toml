@@ -1,7 +1,6 @@
 # Private Speech-to-Text Configuration
 
 # Audio sample rate for processing (Hz)
-# Both Vosk and Whisper work well with 16000 Hz
 sample_rate = 16000
 
 # Audio gain/amplification (1.0 = no change, 2.0 = double, 3.0 = triple)
@@ -14,16 +13,8 @@ audio_gain = 8
 output_directory = "./recordings"
 
 # Real-time recognition engine selection
-# "vosk"        - Vosk engine (default, always available)
 # "sherpa-onnx" - sherpa-onnx engine (requires --features sherpa-engine at build time)
 realtime_engine = "sherpa-onnx"
-
-# Path to Vosk model directory for REAL-TIME streaming recognition (used when realtime_engine = "vosk")
-# Vosk is designed for streaming and provides instant, low-latency feedback during recording
-# Download from: https://alphacephei.com/vosk/models
-# Recommended: vosk-model-small-en-us-0.15 (40 MB) - good balance of speed and accuracy
-# Alternative: vosk-model-en-us-0.22 (1.8 GB) - better accuracy, higher CPU usage   
-vosk_model_path = "./models/vosk-model-small-en-us-0.15"
 
 # Path to sherpa-onnx streaming Zipformer model files (used when realtime_engine = "sherpa-onnx")
 # Each file must be specified individually because model archives use versioned filenames.
@@ -47,10 +38,10 @@ sherpa_tokens  = "./models/sherpa-onnx/sherpa-onnx-streaming-zipformer-en-2023-0
 # Download from: https://huggingface.co/ggerganov/whisper.cpp
 # Recommended: ggml-small.en.bin (460 MB) - high accuracy
 # Alternative: ggml-medium.en.bin (1.5 GB) - best accuracy, slower
-whisper_model_path_accurate = "./models/ggml-small.en.bin"
+whisper_model_path_accurate = "./models/whisper/ggml-small.en.bin"
 
 # Enable accurate recognition with Whisper after recording stops
-# Set to false if you only want real-time Vosk transcription
+# Set to false if you only want real-time transcription
 enable_accurate_recognition = true
 
 # Enable Ollama summary generation after recording
