@@ -5,6 +5,8 @@ use std::path::Path;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Config {
+    /// Audio sample rate for processing (Hz).  Defaults to 16000 when omitted.
+    #[serde(default = "default_sample_rate")]
     pub sample_rate: u32,
     pub audio_gain: f32,
     pub output_directory: String,
@@ -38,6 +40,10 @@ pub struct Config {
     pub summary_suffix: String,
     #[serde(default = "default_ollama_timeout_secs")]
     pub ollama_timeout_secs: u64,
+}
+
+fn default_sample_rate() -> u32 {
+    16000
 }
 
 fn default_realtime_engine() -> String {
@@ -243,5 +249,20 @@ mod tests {
         let cfg: Config = parse_toml(toml).expect("parsing failed");
         let err = cfg.validate().unwrap_err();
         assert!(err.to_string().contains("must not be empty"));
+    }
+
+    #[test]
+    fn missing_sample_rate_uses_default() {
+        let toml = r#"
+            audio_gain = 1.0
+            output_directory = "./recordings"
+            realtime_engine = "vosk"
+            vosk_model_path = "./models/vosk"
+            whisper_model_path_accurate = "./models/ggml-small.en.bin"
+            enable_accurate_recognition = false
+        "#;
+        let cfg: Config = parse_toml(toml).expect("parsing failed");
+        assert_eq!(cfg.sample_rate, 16000);
+        cfg.validate().unwrap();
     }
 }

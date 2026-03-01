@@ -117,12 +117,12 @@ cargo build --release
 
 ## Configuration
 
-Edit `config.toml`:
+Edit `config.toml` (the `sample_rate` field is optional and defaults to 16000 Hz):
 
 ```toml
-# Audio sample rate for processing (Hz)
+# Audio sample rate for processing (Hz) – defaults to 16000 if you omit it
 # Whisper works best with 16000 Hz
-sample_rate = 16000
+# sample_rate = 16000
 
 # Audio gain/amplification multiplier
 # 1.0 = no change, 2.0 = double volume, 3.0 = triple volume

@@ -1,7 +1,9 @@
 # Private Speech-to-Text Configuration
 
 # Audio sample rate for processing (Hz)
-sample_rate = 16000
+# Defaults to 16000 if omitted (Whisper works best at 16kHz).
+# You can remove the next line to use the default.
+# sample_rate = 16000
 
 # Audio gain/amplification (1.0 = no change, 2.0 = double, 3.0 = triple)
 # Increase if recordings are too quiet (try 2.0, 3.0, or higher)
@@ -55,7 +57,7 @@ enable_accurate_recognition = true
 ollama_enabled = false
 
 # Ollama server host (include scheme and port if needed)
-ollama_host = "http://diablo:11434"
+ollama_host = "http://localhost:11434"
 
 # Ollama model name
 ollama_model = "llama3.2"

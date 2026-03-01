@@ -51,14 +51,16 @@ cd ..
 
 ## Step 4: Verify config.toml
 
-The default `config.toml` should work if you followed Step 3. If you plan to use
-sherpa-onnx for real-time transcription you **can omit** `vosk_model_path`. It is
-only required when `realtime_engine = "vosk"`.
+The default `config.toml` should work if you followed Step 3.  The
+`sample_rate` setting is optional (it will automatically be 16000 Hz) and you
+can drop the line entirely.  If you plan to use sherpa-onnx for real-time
+transcription you **can omit** `vosk_model_path`. It is only required when
+`realtime_engine = "vosk"`.
 
-Example config for real-time Vosk:
+Example config for real-time Vosk (you can omit the `sample_rate` line):
 
 ```toml
-sample_rate = 16000
+# sample_rate = 16000        # default when omitted
 output_directory = "./recordings"
 vosk_model_path = "./models/vosk-model-small-en-us-0.15"
 whisper_model_path = "./models/ggml-base.en.bin"
@@ -68,7 +70,7 @@ enable_accurate_recognition = false
 Example config for sherpa-onnx (no Vosk path needed):
 
 ```toml
-sample_rate = 16000
+# sample_rate = 16000        # default when omitted
 output_directory = "./recordings"
 realtime_engine = "sherpa-onnx"
 # ...sherpa model paths...
