@@ -13,7 +13,6 @@ pub enum InputCommand {
 pub fn check_input() -> Result<InputCommand> {
     if event::poll(Duration::from_millis(100))? {
         if let Event::Key(key_event) = event::read()? {
-            log::info!("input key = {:?} {:?}", key_event.modifiers, key_event.code);
             match key_event.code {
                 KeyCode::Enter => return Ok(InputCommand::StartRecording),
                 KeyCode::Esc => return Ok(InputCommand::StopRecording),
