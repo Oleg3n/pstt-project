@@ -195,33 +195,33 @@ pub fn analyze_audio_and_recommend_gain(
     
     if has_problem {
         if very_quiet_pct > 50.0 {
-            log::error!("❌ PROBLEM: {:.0}% of audio is very quiet!", very_quiet_pct);
-            log::error!("   This will cause poor transcription quality.");
+            log::warn!("❌ PROBLEM: {:.0}% of audio is very quiet!", very_quiet_pct);
+            log::warn!("   This will cause poor transcription quality.");
         } else if clipped_pct > 5.0 {
-            log::error!("❌ PROBLEM: {:.1}% of audio is clipped!", clipped_pct);
-            log::error!("   This causes distortion and poor quality.");
+            log::warn!("❌ PROBLEM: {:.1}% of audio is clipped!", clipped_pct);
+            log::warn!("   This causes distortion and poor quality.");
         } else if rms < 0.05 {
-            log::error!("❌ PROBLEM: Overall audio level too low (RMS: {:.4})", rms);
-            log::error!("   This will cause poor transcription quality.");
+            log::warn!("❌ PROBLEM: Overall audio level too low (RMS: {:.4})", rms);
+            log::warn!("   This will cause poor transcription quality.");
         }
         
-        log::error!("");
+        log::warn!("");
         
         // Show the appropriate recommendation
         if recommended_gain > current_gain {
-            log::error!("   SOLUTION: Increase audio_gain in config.toml");
-            log::error!("   Current: audio_gain = {:.1}", current_gain);
-            log::error!("   Recommended: audio_gain = {:.1}", recommended_gain);
+            log::warn!("   SOLUTION: Increase audio_gain in config.toml");
+            log::warn!("   Current: audio_gain = {:.1}", current_gain);
+            log::warn!("   Recommended: audio_gain = {:.1}", recommended_gain);
         } else if recommended_gain < current_gain {
-            log::error!("   SOLUTION: Decrease audio_gain in config.toml");
-            log::error!("   Current: audio_gain = {:.1}", current_gain);
-            log::error!("   Recommended: audio_gain = {:.1}", recommended_gain);
+            log::warn!("   SOLUTION: Decrease audio_gain in config.toml");
+            log::warn!("   Current: audio_gain = {:.1}", current_gain);
+            log::warn!("   Recommended: audio_gain = {:.1}", recommended_gain);
         } else {
-            log::error!("   Note: Current gain seems appropriate.");
-            log::error!("   Issue may be with microphone input level.");
+            log::warn!("   Note: Current gain seems appropriate.");
+            log::warn!("   Issue may be with microphone input level.");
         }
         
-        log::error!("");
+        log::warn!("");
     } else {
         log::info!("✅ Audio levels look good!");
         log::info!("   Current gain ({:.1}) is appropriate.", current_gain);
