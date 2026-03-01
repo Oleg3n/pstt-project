@@ -176,6 +176,29 @@ cargo run --release
 ./target/release/pstt
 ```
 
+> **Version & build**
+>
+> The program keeps the semver version from `Cargo.toml` and a separate
+> build counter that is incremented automatically on every build. The two
+> values are displayed independently in the startup banner, e.g.:
+>
+> ```text
+> ╔══════════════════════════════════════════════════════════════╗
+> ║         Private Speech-to-Text (PSTT) v2.4.1                 ║
+> ║         Build: 1047                                       ║
+> ╚══════════════════════════════════════════════════════════════╝
+> ```
+>
+> You can also query either value from the command line:
+>
+> ```bash
+> # show version only
+> ./pstt --version
+>
+> # show build number only
+> ./pstt --build
+> ```
+
 **Controls:**
 - **Enter** - Start recording
 - **Esc** - Stop recording (triggers accurate transcription if enabled)

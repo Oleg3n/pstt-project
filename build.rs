@@ -33,4 +33,27 @@ fn main() {
             }
         }
     }
+
+    // ------------------------------------------------------------------
+    // Build number handling
+    // ------------------------------------------------------------------
+    // Bump persistent build counter stored in `build_number.txt` (committed in repo).
+    // The file contains a single integer; if missing we start from 0.
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+    let build_file = Path::new(&manifest_dir).join("build_number.txt");
+    let mut build = 0u64;
+    if let Ok(contents) = fs::read_to_string(&build_file) {
+        if let Ok(n) = contents.trim().parse::<u64>() {
+            build = n;
+        }
+    }
+    build += 1;
+    let _ = fs::write(&build_file, build.to_string());
+
+    // Make the build number available to the code
+    println!("cargo:rustc-env=BUILD_NUMBER={}", build);
+
+    // Re-run build script when version changes or counter file is modified
+    println!("cargo:rerun-if-changed={}", build_file.display());
+    println!("cargo:rerun-if-env-changed=CARGO_PKG_VERSION");
 }

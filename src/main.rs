@@ -28,8 +28,13 @@ use input::{InputCommand, check_input};
 #[derive(Parser)]
 #[command(name = "pstt")]
 #[command(about = "Private Speech-to-Text - Terminal-based voice recorder with real-time transcription", long_about = None)]
-#[command(version)]
+// keep version stamp from Cargo, build number is handled separately
+#[command(version = env!("CARGO_PKG_VERSION"))]
 struct Cli {
+    /// Print the build number and exit
+    #[arg(long)]
+    build: bool,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -220,8 +225,10 @@ fn run_recording_mode(config: Arc<Config>) -> Result<()> {
     }));
 
     let version = env!("CARGO_PKG_VERSION");
+    let build_num = env!("BUILD_NUMBER");
     println!("╔══════════════════════════════════════════════════════════════╗");
     println!("║         Private Speech-to-Text (PSTT) v{}                 ║", version);
+    println!("║         Build: {}                                       ║", build_num);
     println!("╚══════════════════════════════════════════════════════════════╝");
     println!();
     
@@ -462,6 +469,11 @@ fn main() -> Result<()> {
     }
 
     let cli = Cli::parse();
+    if cli.build {
+        println!("Build: {}", env!("BUILD_NUMBER"));
+        return Ok(());
+    }
+
     let config = Arc::new(Config::load()?);
     
     match cli.command {
@@ -477,4 +489,14 @@ fn main() -> Result<()> {
     }
     
     Ok(())
+}
+
+// compile-time sanity check for build number
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn build_number_is_numeric() {
+        let build: u64 = env!("BUILD_NUMBER").parse().expect("BUILD_NUMBER must be an integer");
+        assert!(build > 0, "build number should be positive");
+    }
 }
